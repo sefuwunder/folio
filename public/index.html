@@ -11,9 +11,6 @@
 
   <!-- macOS-style titlebar -->
   <header class="titlebar">
-    <div class="traffic" aria-hidden="true">
-      <span class="tl close"></span><span class="tl min"></span><span class="tl max"></span>
-    </div>
     <div class="toolbar">
       <button id="btn-sidebar" class="tbtn" title="Toggle sidebar" aria-label="Toggle sidebar">
         <svg viewBox="0 0 16 16" width="16" height="16"><rect x="1" y="2" width="14" height="12" rx="2" fill="none" stroke="currentColor"/><line x1="6" y1="2" x2="6" y2="14" stroke="currentColor"/></svg>
@@ -44,7 +41,7 @@
     <aside class="sidebar" id="sidebar">
       <div class="side-head">
         <button id="btn-back-folders" class="backbtn" aria-label="Back">‹</button>
-        <span>Library</span>
+        <span class="side-head-text">Library<span class="vault-path" id="vault-path" title=""></span></span>
       </div>
       <div class="folder-tree" id="folder-tree"></div>
     </aside>

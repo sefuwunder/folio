@@ -13,7 +13,9 @@ import { join, extname } from 'node:path';
 import {
   folderTree, listNotes, readNote, writeNote, makeFolder,
   renameEntry, moveEntry, deleteEntry, resolveVaultPath, VaultError,
+  validateVaultPath, pickVaultDirectory,
 } from './vault.js';
+import { getAppSetting, setAppSetting } from './settings.js';
 import { searchVault } from './search.js';
 import { plainText } from './markdown.js';
 import {
@@ -24,11 +26,25 @@ import {
 
 const PORT = Number(process.env.PORT || 3038);
 const HOST = process.env.HOST || '127.0.0.1';
-const VAULT = process.env.FOLIO_VAULT || join(process.env.HOME || '/tmp', 'workspace/your_files/folio/vault');
+const VAULT_DEFAULT = process.env.FOLIO_VAULT || join(process.env.HOME || '/tmp', 'workspace/your_files/folio/vault');
 const DATA = process.env.FOLIO_DATA || join(process.env.HOME || '/tmp', 'workspace/your_files/folio/data');
 
-mkdirSync(VAULT, { recursive: true });
 mkdirSync(DATA, { recursive: true });
+
+// Vault path: persisted app setting wins, then FOLIO_VAULT env, then default.
+// A stale setting (folder moved/deleted) falls back to the default, loudly.
+let vault = VAULT_DEFAULT;
+let vaultSource = process.env.FOLIO_VAULT ? 'env' : 'default';
+const savedVault = getAppSetting(DATA, 'vault_path');
+if (savedVault) {
+  try {
+    vault = validateVaultPath(savedVault);
+    vaultSource = 'settings';
+  } catch (e: any) {
+    console.warn(`saved vault_path invalid (${savedVault}): ${e?.message} — using default`);
+  }
+}
+mkdirSync(vault, { recursive: true });
 
 const MIME: Record<string, string> = {
   '.html': 'text/html; charset=utf-8',
@@ -73,7 +89,7 @@ const server = Bun.serve({
     try {
       // ----- vault API -----
       if (pathname === '/api/tree' && req.method === 'GET') {
-        return Response.json({ folders: folderTree(VAULT) });
+        return Response.json({ folders: folderTree(vault) });
       }
       if (pathname === '/api/notes' && req.method === 'GET') {
         const folder = url.searchParams.get('folder') || '';
@@ -81,23 +97,23 @@ const server = Bun.serve({
         const withSnippet = url.searchParams.get('snippet') === '1';
         let notes: any[];
         if (recursive) {
-          notes = listNotes(VAULT, '');
+          notes = listNotes(vault, '');
           const walkF = (folders: any[]) => {
             for (const f of folders) {
-              notes.push(...listNotes(VAULT, f.path));
+              notes.push(...listNotes(vault, f.path));
               walkF(f.children);
             }
           };
-          walkF(folderTree(VAULT));
+          walkF(folderTree(vault));
           notes.sort((a: any, b: any) => b.mtime - a.mtime);
         } else {
-          notes = listNotes(VAULT, folder);
+          notes = listNotes(vault, folder);
         }
         if (withSnippet) {
           for (const n of notes as any[]) {
             try {
               if (n.ext === '.pdf') { (n as any).snippet = 'PDF document'; continue; }
-              const raw = readNote(VAULT, n.path);
+              const raw = readNote(vault, n.path);
               const text = n.ext === '.md' ? plainText(raw) : raw;
               (n as any).snippet = text.replace(/\s+/g, ' ').trim().slice(0, 140);
             } catch { (n as any).snippet = ''; }
@@ -107,17 +123,17 @@ const server = Bun.serve({
       }
       if (pathname === '/api/file' && req.method === 'GET') {
         const path = url.searchParams.get('path') || '';
-        const abs = resolveVaultPath(VAULT, path);
+        const abs = resolveVaultPath(vault, path);
         const ext = extname(abs).toLowerCase();
         if (ext === '.pdf') {
           return Response.json({ error: 'use /raw for binary files' }, { status: 400 });
         }
-        return Response.json({ path, content: readNote(VAULT, path), mtime: statSync(abs).mtimeMs });
+        return Response.json({ path, content: readNote(vault, path), mtime: statSync(abs).mtimeMs });
       }
       // raw binary (PDF embed)
       if (pathname.startsWith('/raw/') && req.method === 'GET') {
         const rel = decodeURIComponent(pathname.slice(5));
-        const abs = resolveVaultPath(VAULT, rel);
+        const abs = resolveVaultPath(vault, rel);
         if (!existsSync(abs) || !statSync(abs).isFile()) {
           return Response.json({ error: 'not found' }, { status: 404 });
         }
@@ -127,42 +143,72 @@ const server = Bun.serve({
       }
       if (pathname === '/api/file' && req.method === 'POST') {
         const b: any = await jsonBody(req);
-        const r = writeNote(VAULT, b.path, b.content);
+        const r = writeNote(vault, b.path, b.content);
         return Response.json(r, { status: 201 });
       }
       if (pathname === '/api/file' && req.method === 'PUT') {
         const b: any = await jsonBody(req);
-        const r = writeNote(VAULT, b.path, b.content);
+        const r = writeNote(vault, b.path, b.content);
         return Response.json(r);
       }
       if (pathname === '/api/folder' && req.method === 'POST') {
         const b: any = await jsonBody(req);
-        return Response.json(makeFolder(VAULT, b.path), { status: 201 });
+        return Response.json(makeFolder(vault, b.path), { status: 201 });
       }
       if (pathname === '/api/rename' && req.method === 'POST') {
         const b: any = await jsonBody(req);
-        return Response.json(renameEntry(VAULT, b.path, b.name));
+        return Response.json(renameEntry(vault, b.path, b.name));
       }
       if (pathname === '/api/move' && req.method === 'POST') {
         const b: any = await jsonBody(req);
-        return Response.json(moveEntry(VAULT, b.path, b.dest || ''));
+        return Response.json(moveEntry(vault, b.path, b.dest || ''));
       }
       if (pathname === '/api/delete' && req.method === 'POST') {
         const b: any = await jsonBody(req);
-        return Response.json(deleteEntry(VAULT, b.path));
+        return Response.json(deleteEntry(vault, b.path));
       }
       if (pathname === '/api/search' && req.method === 'GET') {
         const q = url.searchParams.get('q') || '';
-        return Response.json({ results: searchVault(VAULT, q) });
+        return Response.json({ results: searchVault(vault, q) });
       }
       if (pathname === '/api/snippet' && req.method === 'GET') {
         const path = url.searchParams.get('path') || '';
-        const abs = resolveVaultPath(VAULT, path);
+        const abs = resolveVaultPath(vault, path);
         const ext = extname(abs).toLowerCase();
         if (ext === '.pdf') return Response.json({ snippet: 'PDF document' });
-        const raw = readNote(VAULT, path);
+        const raw = readNote(vault, path);
         const text = ext === '.md' ? plainText(raw) : raw;
         return Response.json({ snippet: text.replace(/\s+/g, ' ').trim().slice(0, 140) });
+      }
+
+      // ----- vault location -----
+      if (pathname === '/api/vault/info' && req.method === 'GET') {
+        return Response.json({ path: vault, source: vaultSource });
+      }
+      if (pathname === '/api/vault/set' && req.method === 'POST') {
+        const b: any = await jsonBody(req);
+        const abs = validateVaultPath(b.path);
+        setAppSetting(DATA, 'vault_path', abs);
+        vault = abs;
+        vaultSource = 'settings';
+        console.log(`folio vault switched to ${vault}`);
+        return Response.json({ path: vault });
+      }
+      if (pathname === '/api/vault/browse' && req.method === 'POST') {
+        // Pop a REAL native OS directory dialog (zenity, then kdialog).
+        // The server runs on the user's own machine, so it appears on
+        // their screen. ~60s timeout — choosing takes a while.
+        const r = await pickVaultDirectory();
+        if ((r as any).path) {
+          const abs = validateVaultPath((r as any).path);
+          setAppSetting(DATA, 'vault_path', abs);
+          vault = abs;
+          vaultSource = 'settings';
+          console.log(`folio vault switched to ${vault}`);
+          return Response.json({ path: vault });
+        }
+        if ((r as any).cancelled) return Response.json({ cancelled: true });
+        return Response.json({ available: false });
       }
 
       // ----- sync settings (masked; password never leaves the server) -----
@@ -219,7 +265,7 @@ const server = Bun.serve({
       }
       if (pathname === '/api/sync/run' && req.method === 'POST') {
         const s = loadSyncSettings(DATA);
-        const result = await odSync(VAULT, {
+        const result = await odSync(vault, {
           username: s.username, password: s.password,
           remoteFolder: s.remoteFolder || '/Folio',
           dataDir: DATA,
@@ -239,4 +285,4 @@ const server = Bun.serve({
   },
 });
 
-console.log(`folio on http://${HOST}:${PORT} (vault: ${VAULT})`);
+console.log(`folio on http://${HOST}:${PORT} (vault: ${vault})`);

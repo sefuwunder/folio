@@ -1,8 +1,8 @@
 // src/vault.js — filesystem operations for the Folio vault (shared ESM).
 // All paths are vault-relative; traversal outside the vault is rejected.
 
-import { readdirSync, statSync, mkdirSync, writeFileSync, readFileSync, renameSync, rmSync, existsSync } from 'node:fs';
-import { join, normalize, sep, dirname, basename, extname } from 'node:path';
+import { readdirSync, statSync, mkdirSync, writeFileSync, readFileSync, renameSync, rmSync, existsSync, accessSync, constants } from 'node:fs';
+import { join, normalize, sep, dirname, basename, extname, isAbsolute } from 'node:path';
 
 export const NOTE_EXTS = new Set(['.md', '.txt']);
 export const VIEW_EXTS = new Set(['.md', '.txt', '.pdf']);
@@ -143,6 +143,81 @@ export function deleteEntry(root, rel) {
   if (!existsSync(abs)) throw new VaultError('not found', 'notfound');
   rmSync(abs, { recursive: true, force: true });
   return { deleted: rel };
+}
+
+/** Validate a user-chosen vault root: absolute, exists, is a readable+writable dir. */
+export function validateVaultPath(p) {
+  const s = String(p || '').trim();
+  if (!s) throw new VaultError('no folder given', 'invalid');
+  if (s.includes('\0')) throw new VaultError('invalid folder path', 'invalid');
+  if (!isAbsolute(s)) throw new VaultError('folder path must be absolute', 'invalid');
+  const abs0 = normalize(s);
+  if (abs0 === sep) throw new VaultError('refusing to use the filesystem root as a vault', 'invalid');
+  const abs = abs0.replace(/\/+$/, '');
+  let st;
+  try { st = statSync(abs); }
+  catch { throw new VaultError('folder does not exist: ' + abs, 'invalid'); }
+  if (!st.isDirectory()) throw new VaultError('not a folder: ' + abs, 'invalid');
+  try { accessSync(abs, constants.R_OK | constants.W_OK); }
+  catch { throw new VaultError('folder is not readable and writable: ' + abs, 'invalid'); }
+  return abs;
+}
+
+const DIALOG_TIMEOUT_MS = 60000;
+
+/** Default dialog runner: Bun.spawn with a 60s timeout (user may take time choosing). */
+async function defaultDialogRun(cmd, args, { timeoutMs = DIALOG_TIMEOUT_MS } = {}) {
+  let proc;
+  try {
+    proc = Bun.spawn([cmd, ...args], { stdout: 'pipe', stderr: 'pipe' });
+  } catch (e) {
+    const err = new Error(`dialog tool not available: ${cmd}`);
+    err.code = 'ENOENT';
+    throw err;
+  }
+  let timedOut = false;
+  const timer = setTimeout(() => { timedOut = true; try { proc.kill(); } catch { /* gone */ } }, timeoutMs);
+  let code, stdout;
+  try {
+    [code, stdout] = await Promise.all([proc.exited, new Response(proc.stdout).text()]);
+  } finally {
+    clearTimeout(timer);
+  }
+  if (code === 127) {
+    const err = new Error(`dialog tool not available: ${cmd}`);
+    err.code = 'ENOENT';
+    throw err;
+  }
+  return { code, stdout, timedOut };
+}
+
+/**
+ * Pop a REAL native OS directory dialog (zenity, then kdialog) so the user
+ * can choose a vault folder. Returns {path} | {cancelled:true, timedOut?} |
+ * {available:false}. The runner is injectable for tests.
+ */
+export async function pickVaultDirectory(deps = {}) {
+  const run = deps.run || defaultDialogRun;
+  const tools = [
+    { cmd: 'zenity', args: ['--file-selection', '--directory', '--title=Choose vault folder'] },
+    { cmd: 'kdialog', args: ['--getexistingdirectory', '--title', 'Choose vault folder'] },
+  ];
+  for (const t of tools) {
+    let r;
+    try {
+      r = await run(t.cmd, t.args, { timeoutMs: DIALOG_TIMEOUT_MS });
+    } catch (e) {
+      if (e && (e.code === 'ENOENT' || /ENOENT|not found/i.test(String(e.message)))) continue;
+      throw e;
+    }
+    if (r.timedOut) return { cancelled: true, timedOut: true };
+    const picked = String(r.stdout || '').trim();
+    if (r.code === 0 && picked) return { path: picked };
+    // exit 1 / empty output = the user dismissed the dialog — respect that.
+    if (r.code === 1 || (r.code === 0 && !picked)) return { cancelled: true };
+    // anything else (no display, broken tool, …) → try the next tool
+  }
+  return { available: false };
 }
 
 /** Walk the vault yielding {path, ext, mtime, size} for syncable note files. */

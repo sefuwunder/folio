@@ -295,7 +295,7 @@ $('#btn-new-note').onclick = async () => {
   } catch (e) { toast(e.message); }
 };
 
-$('#btn-new-folder').onclick = async () => {
+async function createFolder() {
   const name = await promptModal('New folder', '', 'Create');
   if (!name) return;
   const parent = state.folder;
@@ -306,6 +306,49 @@ $('#btn-new-folder').onclick = async () => {
     await loadTree();
     selectFolder(path, name);
   } catch (e) { toast(e.message); }
+}
+
+/* vault switching: native OS dialog when available, manual path fallback */
+async function loadVaultInfo() {
+  try {
+    const { path } = await api('/api/vault/info');
+    const el = $('#vault-path');
+    if (el) { el.textContent = path; el.title = path; }
+  } catch { /* tree still loads; path display is cosmetic */ }
+}
+
+async function switchVault(path) {
+  state.folder = ''; state.folderName = 'All Notes'; state.note = null;
+  await loadTree();
+  await selectFolder('', 'All Notes');
+  await loadVaultInfo();
+  toast('Vault: ' + path);
+}
+
+async function openVaultDialog() {
+  let current = '';
+  try { current = (await api('/api/vault/info')).path || ''; } catch (e) { toast(e.message); return; }
+  let r;
+  try {
+    r = await api('/api/vault/browse', { method: 'POST' });
+  } catch (e) { toast(e.message); return; }
+  if (r.cancelled) return;                       // user dismissed the OS dialog
+  if (r.path) { await switchVault(r.path); return; }
+  // no native dialog on this machine → manual path entry
+  const manual = await promptModal('Vault folder', current, 'Use folder');
+  if (!manual) return;
+  try {
+    const s = await api('/api/vault/set', { method: 'POST', body: JSON.stringify({ path: manual }) });
+    await switchVault(s.path);
+  } catch (e) { toast(e.message); }
+}
+
+$('#btn-new-folder').onclick = (e) => {
+  const rect = e.currentTarget.getBoundingClientRect();
+  showCtxMenu(rect.left, rect.bottom + 6, [
+    { label: 'Open vault…', fn: openVaultDialog },
+    { label: 'New folder', fn: createFolder },
+  ]);
 };
 
 function folderMenu(f) {
@@ -644,10 +687,20 @@ $('#btn-sync-now').onclick = async (e) => {
 
 /* ---------------- responsive chrome ---------------- */
 
-$('#btn-sidebar').onclick = () => document.body.classList.toggle('sidebar-open');
-$('#scrim').onclick = () => document.body.classList.remove('sidebar-open');
-$('#btn-back-folders').onclick = () => document.body.classList.remove('sidebar-open');
-$('#btn-back-list').onclick = () => document.body.classList.remove('sidebar-open');
+$('#btn-sidebar').onclick = () => {
+  // narrow: slide-over drawer (sidebar-open). wide: collapse the pane.
+  const narrow = window.matchMedia('(max-width: 1020px)').matches;
+  if (narrow) {
+    document.body.classList.remove('sidebar-collapsed');
+    document.body.classList.toggle('sidebar-open');
+  } else {
+    document.body.classList.remove('sidebar-open');
+    document.body.classList.toggle('sidebar-collapsed');
+  }
+};
+$('#scrim').onclick = () => document.body.classList.remove('sidebar-open', 'sidebar-collapsed');
+$('#btn-back-folders').onclick = () => document.body.classList.remove('sidebar-open', 'sidebar-collapsed');
+$('#btn-back-list').onclick = () => document.body.classList.remove('sidebar-open', 'sidebar-collapsed');
 $('#btn-back-editor').onclick = () => { saveNote(); document.body.classList.remove('note-open'); };
 
 /* ---------------- boot ---------------- */
@@ -656,6 +709,7 @@ $('#btn-back-editor').onclick = () => { saveNote(); document.body.classList.remo
   try {
     await loadTree();
     await selectFolder('', 'All Notes');
+    await loadVaultInfo();
   } catch (e) {
     toast('Failed to load vault: ' + e.message);
   }

@@ -63,13 +63,7 @@ body {
   position: relative;
   user-select: none;
 }
-.traffic { display: flex; gap: 8px; }
-.tl { width: 12px; height: 12px; border-radius: 50%; box-shadow: inset 0 0 2px rgba(0,0,0,0.25); }
-.tl.close { background: #ff5f57; }
-.tl.min { background: #febc2e; }
-.tl.max { background: #28c840; }
-
-.toolbar { display: flex; align-items: center; gap: 4px; margin-left: 8px; }
+.toolbar { display: flex; align-items: center; gap: 4px; }
 .tbtn {
   display: inline-flex; align-items: center; gap: 6px;
   border: 0; background: transparent; color: #3a3a3c;
@@ -109,7 +103,16 @@ body {
   backdrop-filter: blur(24px) saturate(1.6);
   border-right: 1px solid var(--hairline);
   display: flex; flex-direction: column;
-  overflow-y: auto;
+  overflow-y: auto; overflow-x: hidden;
+  transition: width 0.22s ease, border-color 0.22s ease;
+}
+/* desktop: sidebar toggle collapses the pane into the list+editor */
+body.sidebar-collapsed .sidebar { width: 0; border-right-width: 0; }
+.side-head-text { display: flex; flex-direction: column; min-width: 0; }
+.vault-path {
+  text-transform: none; letter-spacing: 0; font-weight: 400; font-size: 10px;
+  color: var(--text-3); max-width: 190px; overflow: hidden;
+  text-overflow: ellipsis; white-space: nowrap;
 }
 .side-head {
   display: flex; align-items: center; gap: 4px;
@@ -356,6 +359,8 @@ body {
     width: min(300px, 84vw);
   }
   body.sidebar-open .sidebar { transform: translateX(0); }
+  /* sidebar-collapsed is a desktop concept; never shrink the drawer on narrow */
+  body.sidebar-collapsed .sidebar { width: min(300px, 84vw); }
   body.sidebar-open .scrim {
     display: block; position: absolute; z-index: 55; inset: 52px 0 0 0;
     background: rgba(0,0,0,0.25);
