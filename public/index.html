@@ -1,0 +1,142 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Folio</title>
+<link rel="stylesheet" href="/styles.css">
+</head>
+<body>
+<div class="window" id="window">
+
+  <!-- macOS-style titlebar -->
+  <header class="titlebar">
+    <div class="traffic" aria-hidden="true">
+      <span class="tl close"></span><span class="tl min"></span><span class="tl max"></span>
+    </div>
+    <div class="toolbar">
+      <button id="btn-sidebar" class="tbtn" title="Toggle sidebar" aria-label="Toggle sidebar">
+        <svg viewBox="0 0 16 16" width="16" height="16"><rect x="1" y="2" width="14" height="12" rx="2" fill="none" stroke="currentColor"/><line x1="6" y1="2" x2="6" y2="14" stroke="currentColor"/></svg>
+      </button>
+      <button id="btn-new-note" class="tbtn" title="New note">
+        <svg viewBox="0 0 16 16" width="16" height="16"><path d="M11 2H4a1 1 0 0 0-1 1v10a1 1 0 0 0 1 1h8a1 1 0 0 0 1-1V5z" fill="none" stroke="currentColor"/><path d="M11 2v3h3M8 8h3M8 11h3" stroke="currentColor" fill="none"/></svg>
+        <span class="tlabel">Note</span>
+      </button>
+      <button id="btn-new-folder" class="tbtn" title="New folder">
+        <svg viewBox="0 0 16 16" width="16" height="16"><path d="M1.5 4a1 1 0 0 1 1-1h3.6a1 1 0 0 1 .8.4l1.2 1.6h4.4a1 1 0 0 1 1 1v5a1 1 0 0 1-1 1h-11a1 1 0 0 1-1-1z" fill="none" stroke="currentColor"/></svg>
+        <span class="tlabel">Folder</span>
+      </button>
+      <button id="btn-sync" class="tbtn" title="Sync with OpenDrive">
+        <svg viewBox="0 0 16 16" width="16" height="16"><path d="M13.5 8a5.5 5.5 0 0 1-9.4 3.9M2.5 8a5.5 5.5 0 0 1 9.4-3.9" fill="none" stroke="currentColor"/><path d="M12.7 1.8v3h-3M3.3 14.2v-3h3" fill="none" stroke="currentColor"/></svg>
+        <span class="tlabel">Sync</span>
+      </button>
+      <button id="btn-search" class="tbtn search-btn" title="Search (⌘K)">
+        <svg viewBox="0 0 16 16" width="16" height="16"><circle cx="7" cy="7" r="4.5" fill="none" stroke="currentColor"/><line x1="10.5" y1="10.5" x2="14" y2="14" stroke="currentColor"/></svg>
+        <span class="search-hint">Search</span>
+        <kbd>⌘K</kbd>
+      </button>
+    </div>
+    <div class="apptitle">Folio</div>
+  </header>
+
+  <div class="main">
+    <!-- sidebar: folders -->
+    <aside class="sidebar" id="sidebar">
+      <div class="side-head">
+        <button id="btn-back-folders" class="backbtn" aria-label="Back">‹</button>
+        <span>Library</span>
+      </div>
+      <div class="folder-tree" id="folder-tree"></div>
+    </aside>
+    <div class="scrim" id="scrim"></div>
+
+    <!-- notes list -->
+    <section class="notelist" id="notelist-pane">
+      <div class="list-head">
+        <button id="btn-back-list" class="backbtn" aria-label="Back to folders">‹</button>
+        <span id="list-title">All Notes</span>
+      </div>
+      <div class="note-list" id="note-list"></div>
+    </section>
+
+    <!-- editor -->
+    <section class="editor" id="editor-pane">
+      <div class="editor-empty" id="editor-empty">
+        <div class="empty-art">✎</div>
+        <p>Select a note to read or edit,<br>or create a new one.</p>
+      </div>
+      <div class="editor-main hidden" id="editor-main">
+        <div class="editor-bar">
+          <button id="btn-back-editor" class="backbtn" aria-label="Back to notes">‹</button>
+          <div class="crumb" id="crumb"></div>
+          <div class="editor-actions">
+            <span class="save-state" id="save-state"></span>
+            <div class="seg" id="md-seg">
+              <button data-mode="edit" class="active">Edit</button><button data-mode="preview">Preview</button>
+            </div>
+          </div>
+        </div>
+        <textarea id="editor-text" class="editor-text" spellcheck="true" placeholder="Start writing…"></textarea>
+        <div id="editor-preview" class="editor-preview md-body hidden"></div>
+        <div id="editor-pdf" class="editor-pdf hidden"></div>
+      </div>
+    </section>
+  </div>
+
+  <!-- search palette -->
+  <div class="overlay hidden" id="search-overlay">
+    <div class="palette">
+      <input id="search-input" placeholder="Search notes…  (title and content)" autocomplete="off">
+      <div class="palette-results" id="search-results"></div>
+    </div>
+  </div>
+
+  <!-- sync panel -->
+  <div class="overlay hidden" id="sync-overlay">
+    <div class="sheet">
+      <div class="sheet-head">
+        <h2>Sync with OpenDrive</h2>
+        <button class="tbtn" id="btn-sync-close" aria-label="Close">✕</button>
+      </div>
+      <p class="sheet-note">Manual sync only — nothing uploads or downloads until you press <b>Sync now</b>.
+      The panel below always shows the real last result; a missing or failed sync is reported, never papered over.</p>
+      <div id="sync-status" class="sync-status"></div>
+      <div id="sync-result" class="sync-result"></div>
+      <div class="sync-creds">
+        <h3>OpenDrive account</h3>
+        <label>Username <input id="set-username" autocomplete="username" placeholder="you@example.com"></label>
+        <label>Password <input id="set-password" type="password" autocomplete="current-password" placeholder="••••••••"></label>
+        <label>Remote folder <input id="set-folder" value="/Folio" maxlength="200" placeholder="/Folio"></label>
+        <div class="modal-btns">
+          <button class="btn" id="btn-sync-test">Test connection</button>
+          <button class="btn" id="btn-sync-disconnect">Disconnect</button>
+          <button class="btn-primary" id="btn-sync-save">Save</button>
+        </div>
+        <p class="sheet-note small">Credentials are stored server-side in Folio's data directory and never sent to the browser again — the status line only ever shows a masked name.</p>
+      </div>
+      <div class="modal-btns sync-actions">
+        <button class="btn-primary big" id="btn-sync-now">Sync now</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- generic modal -->
+  <div class="overlay hidden" id="modal-overlay">
+    <div class="sheet small">
+      <h2 id="modal-title">Name</h2>
+      <input id="modal-input" autocomplete="off">
+      <div class="modal-btns">
+        <button class="btn" id="modal-cancel">Cancel</button>
+        <button class="btn-primary" id="modal-ok">OK</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- context menu -->
+  <div class="ctxmenu hidden" id="ctxmenu"></div>
+
+  <div class="toast" id="toast"></div>
+</div>
+<script type="module" src="/app.js"></script>
+</body>
+</html>
