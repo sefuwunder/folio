@@ -111,7 +111,7 @@ async function loadTree() {
 async function selectFolder(path, name) {
   state.folder = path;
   state.folderName = name;
-  $('#list-title').textContent = name;
+  renderBreadcrumb();
   document.body.classList.remove('sidebar-open');
   closeNote();
   await loadNotes();
@@ -121,12 +121,41 @@ async function selectFolder(path, name) {
 /* ---------------- notes list ---------------- */
 
 async function loadNotes() {
-  const q = state.folder === ''
-    ? '/api/notes?recursive=1&snippet=1'
-    : `/api/notes?folder=${encodeURIComponent(state.folder)}&snippet=1`;
+  const q = `/api/notes?folder=${encodeURIComponent(state.folder)}&recursive=1&snippet=1`;
   const { notes } = await api(q);
   state.notes = notes;
   renderNotes();
+}
+
+/** Breadcrumb for the selected folder: All Notes / A / B, segments clickable. */
+function renderBreadcrumb() {
+  const host = $('#list-title');
+  host.innerHTML = '';
+  const segs = state.folder ? state.folder.split('/') : [];
+  const mk = (label, path, last) => {
+    const b = document.createElement('button');
+    b.className = 'crumb' + (last ? ' current' : '');
+    b.textContent = label;
+    if (!last) b.onclick = () => selectFolder(path, label);
+    else b.setAttribute('aria-current', 'true');
+    return b;
+  };
+  host.appendChild(mk('All Notes', '', segs.length === 0));
+  segs.forEach((s, i) => {
+    const sep = document.createElement('span');
+    sep.className = 'crumb-sep';
+    sep.textContent = '/';
+    host.appendChild(sep);
+    const path = segs.slice(0, i + 1).join('/');
+    host.appendChild(mk(s, path, i === segs.length - 1));
+  });
+}
+
+/** Subfolder of a note relative to the selected folder ('' when directly inside). */
+function noteSub(n) {
+  const dir = n.path.includes('/') ? n.path.slice(0, n.path.lastIndexOf('/')) : '';
+  if (!state.folder) return dir;
+  return dir === state.folder ? '' : dir.slice(state.folder.length + 1);
 }
 
 function renderNotes() {
@@ -140,8 +169,10 @@ function renderNotes() {
     const el = document.createElement('div');
     el.className = 'note-item' + (state.note && state.note.path === n.path ? ' selected' : '');
     el.dataset.path = n.path;
+    const sub = noteSub(n);
     el.innerHTML = `
       <div class="ni-title">${escHtml(n.name)}<span class="ni-ext">${n.ext.replace('.', '')}</span></div>
+      ${sub ? `<div class="ni-sub">${escHtml(sub)}</div>` : ''}
       <div class="ni-meta">${fmtDate(n.mtime)}</div>
       ${n.ext !== '.pdf' && n.snippet ? `<div class="ni-snippet">${escHtml(n.snippet)}</div>` : n.ext === '.pdf' ? `<div class="ni-snippet">PDF document</div>` : ''}`;
     el.onclick = () => openNote(n.path);

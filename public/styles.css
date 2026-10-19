@@ -154,6 +154,19 @@ body.sidebar-collapsed .sidebar { width: 0; border-right-width: 0; }
   font: 600 15px var(--font);
   border-bottom: 1px solid var(--hairline);
 }
+#list-title { display: flex; align-items: center; gap: 2px; overflow: hidden; white-space: nowrap; }
+.crumb {
+  background: none; border: none; padding: 2px 4px; margin: 0;
+  font: 600 15px var(--font); color: var(--accent, #c2703f); cursor: pointer;
+  border-radius: 5px; overflow: hidden; text-overflow: ellipsis; max-width: 130px;
+}
+.crumb.current { color: var(--text-1, inherit); cursor: default; }
+.crumb:not(.current):hover { background: rgba(0,0,0,0.05); }
+.crumb-sep { color: var(--text-2); font-weight: 400; }
+.note-item .ni-sub {
+  font: 11.5px var(--font); color: var(--accent, #c2703f);
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap; margin-top: 1px;
+}
 .note-list { overflow-y: auto; flex: 1; padding: 6px; }
 .note-item {
   padding: 9px 10px; border-radius: 8px; cursor: pointer;

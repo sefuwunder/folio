@@ -73,6 +73,32 @@ export function listNotes(root, rel = '') {
     .sort((a, b) => b.mtime - a.mtime);
 }
 
+/**
+ * Notes in a folder and all its descendant folders (recursive).
+ * Returns the same shape as listNotes, sorted newest-first.
+ * rel = '' walks the whole vault. Unknown folder → VaultError('notfound').
+ */
+export function listNotesRecursive(root, rel = '') {
+  const abs = resolveVaultPath(root, rel); // throws VaultError('traversal') on escape
+  let st;
+  try { st = statSync(abs); }
+  catch { throw new VaultError(`folder not found: ${rel}`, 'notfound'); }
+  if (!st.isDirectory()) throw new VaultError(`not a folder: ${rel}`, 'notfound');
+  const out = [];
+  const walk = (dirAbs, dirRel) => {
+    out.push(...listNotes(root, dirRel));
+    let entries = [];
+    try { entries = readdirSync(dirAbs, { withFileTypes: true }); }
+    catch { return; }
+    for (const e of entries) {
+      if (!e.isDirectory() || e.name.startsWith('.')) continue;
+      walk(join(dirAbs, e.name), dirRel ? `${dirRel}/${e.name}` : e.name);
+    }
+  };
+  walk(abs, rel);
+  return out.sort((a, b) => b.mtime - a.mtime);
+}
+
 /** Read a note's content as UTF-8 text (.md/.txt). */
 export function readNote(root, rel) {
   const abs = resolveVaultPath(root, rel);

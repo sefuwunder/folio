@@ -111,3 +111,50 @@ describe('vault location API', () => {
     expect(r.body.available).toBe(false);
   });
 });
+
+describe('scoped recursive notes (folder depth)', () => {
+  // seed a 3-level tree into vaultA (current vault after prior tests — re-assert it)
+  test('setup nested tree', async () => {
+    await j('/api/vault/set', { method: 'POST', body: JSON.stringify({ path: vaultA }) });
+    const { mkdirSync } = await import('node:fs');
+    mkdirSync(join(vaultA, 'Projects', '2026', 'Q1'), { recursive: true });
+    writeFileSync(join(vaultA, 'Projects', 'a.md'), '# a');
+    writeFileSync(join(vaultA, 'Projects', '2026', 'b.md'), '# b');
+    writeFileSync(join(vaultA, 'Projects', '2026', 'Q1', 'c.md'), '# c');
+    expect(true).toBe(true);
+  });
+  test('folder=Projects&recursive=1 returns the whole subtree', async () => {
+    const r = await j('/api/notes?folder=Projects&recursive=1&snippet=1');
+    expect(r.status).toBe(200);
+    const paths = r.body.notes.map((n) => n.path).sort();
+    expect(paths).toEqual(['Projects/2026/Q1/c.md', 'Projects/2026/b.md', 'Projects/a.md']);
+  });
+  test('folder=Projects/2026 scopes to that subtree only', async () => {
+    const r = await j('/api/notes?folder=Projects%2F2026&recursive=1');
+    expect(r.status).toBe(200);
+    const paths = r.body.notes.map((n) => n.path).sort();
+    expect(paths).toEqual(['Projects/2026/Q1/c.md', 'Projects/2026/b.md']);
+  });
+  test('recursive=1 with no folder = whole vault (All Notes unchanged)', async () => {
+    const r = await j('/api/notes?recursive=1');
+    expect(r.status).toBe(200);
+    const names = r.body.notes.map((n) => n.name);
+    expect(names).toContain('a.md');
+    expect(names).toContain('c.md');
+    expect(names).toContain('a.md'); // root seed file from beforeAll still there
+  });
+  test('unknown folder → error, never a full-vault dump', async () => {
+    const r = await j('/api/notes?folder=Nope&recursive=1');
+    expect(r.status).not.toBe(200);
+    expect(r.body.error).toBeTruthy();
+  });
+  test('traversal rejected', async () => {
+    const r = await j('/api/notes?folder=' + encodeURIComponent('..') + '&recursive=1');
+    expect(r.status).toBe(403);
+  });
+  test('non-recursive folder listing unchanged (direct children only)', async () => {
+    const r = await j('/api/notes?folder=Projects');
+    expect(r.status).toBe(200);
+    expect(r.body.notes.map((n) => n.path)).toEqual(['Projects/a.md']);
+  });
+});

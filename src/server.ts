@@ -11,7 +11,7 @@
 import { readFileSync, existsSync, mkdirSync, statSync, writeFileSync } from 'node:fs';
 import { join, extname } from 'node:path';
 import {
-  folderTree, listNotes, readNote, writeNote, makeFolder,
+  folderTree, listNotes, listNotesRecursive, readNote, writeNote, makeFolder,
   renameEntry, moveEntry, deleteEntry, resolveVaultPath, VaultError,
   validateVaultPath, pickVaultDirectory,
 } from './vault.js';
@@ -97,15 +97,9 @@ const server = Bun.serve({
         const withSnippet = url.searchParams.get('snippet') === '1';
         let notes: any[];
         if (recursive) {
-          notes = listNotes(vault, '');
-          const walkF = (folders: any[]) => {
-            for (const f of folders) {
-              notes.push(...listNotes(vault, f.path));
-              walkF(f.children);
-            }
-          };
-          walkF(folderTree(vault));
-          notes.sort((a: any, b: any) => b.mtime - a.mtime);
+          // scoped subtree: folder = '' means the whole vault ("All Notes").
+          // Unknown folder → VaultError → errJson, never a full-vault dump.
+          notes = listNotesRecursive(vault, folder);
         } else {
           notes = listNotes(vault, folder);
         }
