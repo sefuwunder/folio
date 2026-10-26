@@ -1,6 +1,9 @@
 // src/markdown.js — minimal zero-dependency markdown renderer (shared ESM).
 // Supports: headings, bold, italic, inline code, code blocks, links,
 // unordered/ordered lists, task checkboxes, blockquotes, hr, paragraphs.
+// A ```mermaid fenced block renders as <pre class="mermaid"> (the client
+// lazy-loads the locally vendored Mermaid bundle to turn it into a diagram);
+// every other fence renders as a plain code block.
 // HTML-escapes input first; output is safe to inject.
 
 function esc(s) {
@@ -35,6 +38,7 @@ export function renderMarkdown(src) {
   const html = [];
   let i = 0;
   let inCode = false;
+  let codeLang = '';
   let codeBuf = [];
   let listStack = []; // 'ul' | 'ol'
 
@@ -45,15 +49,21 @@ export function renderMarkdown(src) {
   while (i < lines.length) {
     const line = lines[i];
 
-    // fenced code block
+    // fenced code block (```mermaid becomes a diagram hook, not code)
     if (/^```/.test(line)) {
       if (inCode) {
-        html.push(`<pre><code>${esc(codeBuf.join('\n'))}</code></pre>`);
+        if (codeLang === 'mermaid') {
+          html.push(`<pre class="mermaid">${esc(codeBuf.join('\n'))}</pre>`);
+        } else {
+          html.push(`<pre><code>${esc(codeBuf.join('\n'))}</code></pre>`);
+        }
         codeBuf = [];
         inCode = false;
+        codeLang = '';
       } else {
         closeLists();
         inCode = true;
+        codeLang = line.slice(3).trim().toLowerCase();
       }
       i++;
       continue;

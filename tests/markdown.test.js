@@ -47,6 +47,29 @@ describe('renderMarkdown', () => {
   test('paragraphs', () => {
     expect(renderMarkdown('hello\nworld')).toContain('<p>');
   });
+
+  test('mermaid fence becomes a diagram hook, not a code block', () => {
+    const h = renderMarkdown('```mermaid\nflowchart TD\n  A-->B\n```');
+    expect(h).toContain('<pre class="mermaid">');
+    expect(h).toContain('flowchart TD');
+    expect(h).not.toContain('<pre><code>');
+  });
+
+  test('mermaid fence is case/space tolerant and escapes source', () => {
+    const h = renderMarkdown('``` Mermaid\nA-->B & <C>\n```');
+    expect(h).toContain('<pre class="mermaid">');
+    expect(h).toContain('A--&gt;B &amp; &lt;C&gt;');
+  });
+
+  test('other fences are still plain code blocks', () => {
+    const h = renderMarkdown('```js\nconst x = 1;\n```');
+    expect(h).toContain('<pre><code>');
+    expect(h).not.toContain('class="mermaid"');
+  });
+
+  test('mermaid source is stripped from plain-text snippets', () => {
+    expect(plainText('```mermaid\nflowchart TD\n  A-->B\n```')).toBe('');
+  });
 });
 
 describe('plainText', () => {

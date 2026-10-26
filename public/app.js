@@ -260,7 +260,51 @@ function showPreview() {
   const pv = $('#editor-preview');
   pv.classList.remove('hidden');
   pv.innerHTML = renderMarkdown($('#editor-text').value || state.note.content);
+  renderMermaid();
   $$('#md-seg button').forEach((b) => b.classList.toggle('active', b.dataset.mode === 'preview'));
+}
+
+/* ---------------- mermaid (same pattern as abba) ---------------- */
+/* ```mermaid blocks arrive as <pre class="mermaid"> from renderMarkdown.
+   The vendored bundle (public/vendor/mermaid.min.js, 11.4.1, served locally
+   — no CDN, works offline) loads lazily, only when a diagram is present,
+   and only once. strict mode keeps diagram code from injecting HTML;
+   a bad diagram shows Mermaid's own error card and the source stays
+   readable. Folio is light-only, so a single light theme set is enough. */
+let mermaidLoading = null;
+function renderMermaid() {
+  if (!document.querySelector('pre.mermaid:not([data-mermaid])')) return;
+  const run = () => {
+    try {
+      window.mermaid.initialize({
+        startOnLoad: false,
+        securityLevel: 'strict',
+        theme: 'base',
+        themeVariables: {
+          background: 'transparent',
+          primaryColor: '#ffffff', primaryTextColor: '#1d1d1f', primaryBorderColor: '#007aff',
+          lineColor: '#007aff', secondaryColor: '#f5f5f7', tertiaryColor: '#ffffff',
+          edgeLabelBackground: '#ffffff',
+        },
+        flowchart: { curve: 'basis' },
+      });
+      const ran = window.mermaid.run({ querySelector: 'pre.mermaid:not([data-mermaid])' });
+      if (ran && ran.catch) ran.catch(() => {});
+      document.querySelectorAll('pre.mermaid:not([data-mermaid])').forEach((el) => el.setAttribute('data-mermaid', '1'));
+    } catch (e) { /* leave the source readable */ }
+  };
+  if (window.mermaid) { run(); return; }
+  if (!mermaidLoading) {
+    mermaidLoading = new Promise((res, rej) => {
+      const s = document.createElement('script');
+      s.src = '/vendor/mermaid.min.js?v=11.4.1';
+      s.onload = res; s.onerror = rej;
+      document.head.appendChild(s);
+    });
+    mermaidLoading.then(run, () => {});
+  } else {
+    mermaidLoading.then(run, () => {});
+  }
 }
 
 function closeNote() {
