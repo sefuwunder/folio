@@ -201,6 +201,9 @@ body.sidebar-collapsed .sidebar { width: 0; border-right-width: 0; }
 }
 .crumb { font: 600 14px var(--font); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .crumb .dim { color: var(--text-3); font-weight: 400; }
+.crumb-name { cursor: pointer; }
+.crumb-name:hover { text-decoration: underline; text-underline-offset: 2px; }
+.crumb-input { font: inherit; color: inherit; background: #fff; border: 1px solid var(--accent); border-radius: 6px; padding: 1px 6px; min-width: 120px; max-width: 100%; outline: none; }
 .editor-actions { margin-left: auto; display: flex; align-items: center; gap: 10px; }
 .save-state { font: 12px var(--font); color: var(--text-3); }
 .seg { display: flex; background: rgba(0,0,0,0.06); border-radius: 8px; padding: 2px; }

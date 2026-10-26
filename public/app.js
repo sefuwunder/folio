@@ -227,9 +227,8 @@ async function openNote(path) {
   $('#editor-pdf').classList.add('hidden');
   $('#md-seg').style.display = ext === '.md' ? '' : 'none';
 
-  const dir = path.includes('/') ? path.slice(0, path.lastIndexOf('/')) : '';
   const name = path.slice(path.lastIndexOf('/') + 1);
-  $('#crumb').innerHTML = `${dir ? `<span class="dim">${escHtml(dir)} / </span>` : ''}${escHtml(name)}`;
+  renderCrumb();
 
   if (ext === '.pdf') {
     state.note = { path, ext, content: null, dirty: false };
@@ -270,6 +269,64 @@ function closeNote() {
   $('#editor-empty').classList.remove('hidden');
   document.body.classList.remove('note-open');
 }
+
+/* The open note's file name, shown in the editor bar crumb: the folder
+   part stays static, the file name itself is clickable and edits in place
+   (Enter commits via /api/rename, Esc or blur cancels). */
+function renderCrumb() {
+  if (!state.note) return;
+  const path = state.note.path;
+  const dir = path.includes('/') ? path.slice(0, path.lastIndexOf('/')) : '';
+  const name = path.slice(path.lastIndexOf('/') + 1);
+  $('#crumb').innerHTML = `${dir ? `<span class="dim">${escHtml(dir)} / </span>` : ''}<span id="crumb-name" class="crumb-name" title="Click to rename">${escHtml(name)}</span>`;
+}
+
+function startCrumbRename() {
+  if (!state.note) return;
+  const nameEl = $('#crumb-name');
+  if (!nameEl || $('#crumb-input')) return;
+  const oldName = state.note.path.slice(state.note.path.lastIndexOf('/') + 1);
+  const input = document.createElement('input');
+  input.id = 'crumb-input';
+  input.className = 'crumb-input';
+  input.value = oldName;
+  input.spellcheck = false;
+  nameEl.replaceWith(input);
+  input.focus(); input.select();
+  let done = false;
+  const cancel = () => { if (done) return; done = true; renderCrumb(); };
+  const commit = async () => {
+    if (done) return; done = true;
+    const name = input.value.trim();
+    if (!name || name === oldName) { renderCrumb(); return; }
+    try {
+      await saveNote(); // flush edits to the old path first
+      const { path } = await api('/api/rename', { method: 'POST', body: JSON.stringify({ path: state.note.path, name }) });
+      state.note.path = path;
+      await loadNotes();
+      renderCrumb();
+      // a renamed PDF must point its viewer at the new path, not the old one
+      const pdfBar = document.querySelector('#editor-pdf .pdf-bar');
+      if (pdfBar) {
+        const span = pdfBar.querySelector('span');
+        if (span) span.textContent = path.slice(path.lastIndexOf('/') + 1);
+        const dl = pdfBar.querySelector('a');
+        if (dl) dl.href = `/raw/${encodeURIComponent(path)}`;
+        const embed = document.querySelector('#editor-pdf embed');
+        if (embed) embed.src = `/raw/${encodeURIComponent(path)}`;
+      }
+    } catch (e) { toast(e.message); renderCrumb(); }
+  };
+  input.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter') commit();
+    if (e.key === 'Escape') cancel();
+  });
+  input.addEventListener('blur', cancel);
+}
+
+$('#crumb').addEventListener('click', (e) => {
+  if (e.target.closest('#crumb-name')) startCrumbRename();
+});
 
 $$('#md-seg button').forEach((b) => {
   b.onclick = async () => {
