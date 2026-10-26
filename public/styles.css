@@ -210,7 +210,7 @@ body.sidebar-collapsed .sidebar { width: 0; border-right-width: 0; }
 .editbar button:hover { background: rgba(0,0,0,0.06); color: var(--text); }
 .related { border-top: 1px solid var(--hairline); padding: 10px 16px 14px; }
 .related.hidden { display: none; }
-.related-head { font: 600 11px var(--font); color: var(--text-2); text-transform: uppercase; letter-spacing: 0.04em; margin-bottom: 6px; }
+.related-head { font: 600 11px var(--font); color: var(--text-2); text-transform: uppercase; letter-spacing: 0.04em; margin-bottom: 6px; cursor: pointer; }
 .related-row { display: flex; gap: 8px; align-items: baseline; padding: 4px 6px; border-radius: 6px; cursor: pointer; }
 .related-row:hover { background: rgba(0,0,0,0.04); }
 .related-name { font: 500 13.5px var(--font); }

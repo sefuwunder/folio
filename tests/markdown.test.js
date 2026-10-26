@@ -33,6 +33,13 @@ describe('renderMarkdown', () => {
     expect(h).toContain('checked');
   });
 
+  test('preview task checkboxes are enabled and carry their source line', () => {
+    const h = renderMarkdown('# Head\n\n- [ ] first\n- [x] second');
+    expect(h).not.toContain('disabled');
+    expect(h).toContain('class="task-check" data-line="2"');
+    expect(h).toContain('class="task-check" data-line="3"');
+  });
+
   test('blockquotes and hr', () => {
     expect(renderMarkdown('> quoted')).toContain('<blockquote>');
     expect(renderMarkdown('---')).toContain('<hr>');

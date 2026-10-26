@@ -1,5 +1,5 @@
 import { describe, test, expect } from 'bun:test';
-import { wrapSelection, prefixLines, numberLines, insertTable, insertDetails } from '../src/editbar.js';
+import { wrapSelection, prefixLines, numberLines, insertTable, insertDetails, toggleTaskLine } from '../src/editbar.js';
 
 describe('wrapSelection', () => {
   test('wraps the selection and keeps it on the inner text', () => {
@@ -70,5 +70,25 @@ describe('insertDetails', () => {
     const r = insertDetails('', 0, 0);
     expect(r.value).toBe('<details>\n<summary>Summary</summary>\n\nContent\n\n</details>');
     expect([r.start, r.end]).toEqual([19, 26]);
+  });
+});
+
+describe('toggleTaskLine', () => {
+  test('flips unchecked to checked and back', () => {
+    const src = '- [ ] one\n- [x] two';
+    expect(toggleTaskLine(src, 0)).toBe('- [x] one\n- [x] two');
+    expect(toggleTaskLine(src, 1)).toBe('- [ ] one\n- [ ] two');
+  });
+
+  test('handles indentation and capital X, ignores non-task lines', () => {
+    expect(toggleTaskLine('  - [X] indented', 0)).toBe('  - [ ] indented');
+    expect(toggleTaskLine('plain text', 0)).toBe(null);
+    expect(toggleTaskLine('- [ ] one', 5)).toBe(null);
+    expect(toggleTaskLine('- [ ] one', -1)).toBe(null);
+  });
+
+  test('leaves fenced code content to the renderer, toggles only the line', () => {
+    const src = '```\n- [ ] code\n```\n- [ ] real';
+    expect(toggleTaskLine(src, 3)).toBe('```\n- [ ] code\n```\n- [x] real');
   });
 });

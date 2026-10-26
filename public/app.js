@@ -1,6 +1,6 @@
 // Folio client — macOS-inspired notes organizer (ES module).
 import { renderMarkdown } from '/src/markdown.js';
-import { wrapSelection, prefixLines, numberLines, insertTable, insertDetails } from '/src/editbar.js';
+import { wrapSelection, prefixLines, numberLines, insertTable, insertDetails, toggleTaskLine } from '/src/editbar.js';
 
 const $ = (s) => document.querySelector(s);
 const $$ = (s) => [...document.querySelectorAll(s)];
@@ -290,7 +290,7 @@ function scheduleSave() {
 }
 
 async function saveNote() {
-  if (!state.note || !state.note.dirty || state.note.ext === '.pdf') return;
+  if (!state.note || !state.note.dirty || state.note.ext === '.pdf') return false;
   clearTimeout(state.saveTimer);
   try {
     const { mtime } = await api('/api/file', {
@@ -304,8 +304,10 @@ async function saveNote() {
     // (in Today mode the pane shows tasks, not notes — leave it alone)
     const row = state.notes.find((n) => n.path === state.note.path);
     if (row && !state.today) { row.mtime = mtime; row.snippet = state.note.content.replace(/\s+/g, ' ').trim().slice(0, 140); renderNotes(); }
+    return true;
   } catch (e) {
     toast('Save failed: ' + e.message);
+    return false;
   }
 }
 
@@ -362,6 +364,26 @@ function showPreview() {
   if (state.note) fetchRelated(state.note.path);
   $$('#md-seg button').forEach((b) => b.classList.toggle('active', b.dataset.mode === 'preview'));
 }
+
+/* Clickable tasks in preview: a checkbox click flips that source line and
+   saves. The preview renders from the textarea value (which still holds
+   the text while hidden), so unsaved edits ride along and are saved too;
+   on a failed save the textarea is restored and the preview re-renders
+   from the original, never showing a toggle that didn't stick. */
+async function onPreviewClick(e) {
+  const box = e.target.closest ? e.target.closest('input.task-check') : null;
+  if (!box || !state.note || state.note.ext === '.pdf') return;
+  const ta = $('#editor-text');
+  const src = ta.value || state.note.content;
+  const next = toggleTaskLine(src, Number(box.dataset.line));
+  if (next === null) return;
+  ta.value = next;
+  setDirty(true);
+  if (!(await saveNote())) ta.value = src; // saveNote already toasted
+  showPreview();
+}
+
+$('#editor-preview').addEventListener('click', onPreviewClick);
 
 /* ---------------- related notes (abba's mind.ts, repurposed) ---------------- */
 

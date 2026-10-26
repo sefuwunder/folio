@@ -154,7 +154,10 @@ export function renderMarkdown(src) {
       const cb = item.match(/^\[([ xX])\]\s+(.*)$/);
       if (cb) {
         const checked = cb[1].toLowerCase() === 'x';
-        html.push(`<li class="task"><input type="checkbox" disabled${checked ? ' checked' : ''}> ${inline(cb[2])}</li>`);
+        // Enabled, with its source line number: preview clicks toggle it
+        // (see onPreviewClick in app.js). Tasks in code blocks never reach
+        // here — they render as plain code text.
+        html.push(`<li class="task"><input type="checkbox" class="task-check" data-line="${i}"${checked ? ' checked' : ''}> ${inline(cb[2])}</li>`);
       } else {
         html.push(`<li>${inline(item)}</li>`);
       }

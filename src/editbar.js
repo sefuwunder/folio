@@ -72,6 +72,17 @@ export function insertTable(value, start, end) {
   return insertBlock(value, start, end, block, firstHeader, firstHeader + 6);
 }
 
+/** Flip the checkbox on source line `lineIdx` ([ ] <-> [x]). Returns the
+ *  new text, or null when that line is not a task item. Pure. */
+export function toggleTaskLine(value, lineIdx) {
+  const lines = String(value || '').split('\n');
+  if (lineIdx < 0 || lineIdx >= lines.length) return null;
+  const m = lines[lineIdx].match(/^(\s*[-*]\s+)\[([ xX])\](\s+.*)$/);
+  if (!m) return null;
+  lines[lineIdx] = `${m[1]}[${m[2] === ' ' ? 'x' : ' '}]${m[3]}`;
+  return lines.join('\n');
+}
+
 /** Insert a foldable <details> section; selects the summary placeholder. */
 export function insertDetails(value, start, end) {
   const block = '<details>\n<summary>Summary</summary>\n\nContent\n\n</details>';
