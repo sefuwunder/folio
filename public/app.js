@@ -17,6 +17,13 @@ const state = {
   todayData: null,   // last /api/today payload, re-rendered after openNote
 };
 
+// Generation counter for note opens: every openNote takes a number, and
+// any await that resolves for a superseded open bails out instead of
+// writing a stale file into the editor. closeNote bumps it too, so a
+// fetch that resolves after the user navigated away can't resurrect
+// the editor.
+let openSeq = 0;
+
 async function api(path, opts = {}) {
   const res = await fetch(path, {
     ...opts,
@@ -312,7 +319,9 @@ async function saveNote() {
 }
 
 async function openNote(path) {
+  const seq = ++openSeq;
   await saveNote(); // flush previous
+  if (seq !== openSeq) return; // a newer open (or a close) superseded this one
   const ext = path.slice(path.lastIndexOf('.')).toLowerCase();
   $('#editor-empty').classList.add('hidden');
   $('#editor-main').classList.remove('hidden');
@@ -322,7 +331,6 @@ async function openNote(path) {
   $('#md-seg').style.display = ext === '.md' ? '' : 'none';
 
   const name = path.slice(path.lastIndexOf('/') + 1);
-  renderCrumb();
 
   if (ext === '.pdf') {
     state.note = { path, ext, content: null, dirty: false };
@@ -335,10 +343,14 @@ async function openNote(path) {
       <embed src="/raw/${encodeURIComponent(path)}" type="application/pdf">`;
   } else {
     const { content, mtime } = await api(`/api/file?path=${encodeURIComponent(path)}`);
+    if (seq !== openSeq) return; // superseded while the fetch was in flight
     state.note = { path, ext, content, dirty: false, mtime };
     if (ext === '.md' && state.mdMode === 'preview') showPreview();
     else showEdit();
   }
+  // The crumb reads state.note, so it must render AFTER the assignment
+  // above — rendering it earlier showed the previous file's name.
+  renderCrumb();
   if (state.today && state.todayData) renderToday(state.todayData);
   else renderNotes();
   fetchRelated(path);
@@ -358,7 +370,10 @@ function showPreview() {
   $('#editbar').classList.add('hidden');
   const pv = $('#editor-preview');
   pv.classList.remove('hidden');
-  pv.innerHTML = renderMarkdown($('#editor-text').value || state.note.content);
+  // Render from the open note's content, NOT the textarea: the textarea
+  // still holds the previous file's text while hidden, so rendering from
+  // it showed the old file after a switch in preview mode.
+  pv.innerHTML = renderMarkdown(state.note ? state.note.content || '' : '');
   renderMermaid();
   // preview is the reading mode — refresh related notes with saved content
   if (state.note) fetchRelated(state.note.path);
@@ -366,15 +381,17 @@ function showPreview() {
 }
 
 /* Clickable tasks in preview: a checkbox click flips that source line and
-   saves. The preview renders from the textarea value (which still holds
-   the text while hidden), so unsaved edits ride along and are saved too;
-   on a failed save the textarea is restored and the preview re-renders
-   from the original, never showing a toggle that didn't stick. */
+   saves. The toggle applies to the open note's saved content (the preview
+   renders from it, never from the hidden textarea, which may hold the
+   previous file's text); the textarea is kept in sync so switching back
+   to Edit shows the toggled text. On a failed save the textarea is
+   restored and the preview re-renders from the original, never showing
+   a toggle that didn't stick. */
 async function onPreviewClick(e) {
   const box = e.target.closest ? e.target.closest('input.task-check') : null;
   if (!box || !state.note || state.note.ext === '.pdf') return;
   const ta = $('#editor-text');
-  const src = ta.value || state.note.content;
+  const src = state.note.content || '';
   const next = toggleTaskLine(src, Number(box.dataset.line));
   if (next === null) return;
   ta.value = next;
@@ -452,6 +469,7 @@ function renderMermaid() {
 }
 
 function closeNote() {
+  openSeq++; // a fetch still in flight for the closed note is now stale
   state.note = null;
   $('#editor-main').classList.add('hidden');
   $('#editor-empty').classList.remove('hidden');
@@ -485,23 +503,29 @@ function startCrumbRename() {
   const cancel = () => { if (done) return; done = true; renderCrumb(); };
   const commit = async () => {
     if (done) return; done = true;
+    // Capture the path up front: the user may switch files while the
+    // rename is in flight, and the result must never be applied to the
+    // new note (it would corrupt its path and mislabel its crumb).
+    const commitPath = state.note.path;
     const name = input.value.trim();
     if (!name || name === oldName) { renderCrumb(); return; }
     try {
       await saveNote(); // flush edits to the old path first
-      const { path } = await api('/api/rename', { method: 'POST', body: JSON.stringify({ path: state.note.path, name }) });
-      state.note.path = path;
+      const { path } = await api('/api/rename', { method: 'POST', body: JSON.stringify({ path: commitPath, name }) });
       await loadNotes();
-      renderCrumb();
-      // a renamed PDF must point its viewer at the new path, not the old one
-      const pdfBar = document.querySelector('#editor-pdf .pdf-bar');
-      if (pdfBar) {
-        const span = pdfBar.querySelector('span');
-        if (span) span.textContent = path.slice(path.lastIndexOf('/') + 1);
-        const dl = pdfBar.querySelector('a');
-        if (dl) dl.href = `/raw/${encodeURIComponent(path)}`;
-        const embed = document.querySelector('#editor-pdf embed');
-        if (embed) embed.src = `/raw/${encodeURIComponent(path)}`;
+      if (state.note && state.note.path === commitPath) {
+        state.note.path = path;
+        renderCrumb();
+        // a renamed PDF must point its viewer at the new path, not the old one
+        const pdfBar = document.querySelector('#editor-pdf .pdf-bar');
+        if (pdfBar) {
+          const span = pdfBar.querySelector('span');
+          if (span) span.textContent = path.slice(path.lastIndexOf('/') + 1);
+          const dl = pdfBar.querySelector('a');
+          if (dl) dl.href = `/raw/${encodeURIComponent(path)}`;
+          const embed = document.querySelector('#editor-pdf embed');
+          if (embed) embed.src = `/raw/${encodeURIComponent(path)}`;
+        }
       }
     } catch (e) { toast(e.message); renderCrumb(); }
   };
