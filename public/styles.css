@@ -204,6 +204,25 @@ body.sidebar-collapsed .sidebar { width: 0; border-right-width: 0; }
 .crumb-name { cursor: pointer; }
 .crumb-name:hover { text-decoration: underline; text-underline-offset: 2px; }
 .crumb-input { font: inherit; color: inherit; background: #fff; border: 1px solid var(--accent); border-radius: 6px; padding: 1px 6px; min-width: 120px; max-width: 100%; outline: none; }
+.editbar { display: flex; flex-wrap: wrap; gap: 4px; padding: 6px 16px; border-bottom: 1px solid var(--hairline); }
+.editbar.hidden { display: none; }
+.editbar button { border: 0; background: transparent; font: 500 12.5px var(--font); color: var(--text-2); padding: 4px 8px; border-radius: 6px; cursor: pointer; }
+.editbar button:hover { background: rgba(0,0,0,0.06); color: var(--text); }
+.related { border-top: 1px solid var(--hairline); padding: 10px 16px 14px; }
+.related.hidden { display: none; }
+.related-head { font: 600 11px var(--font); color: var(--text-2); text-transform: uppercase; letter-spacing: 0.04em; margin-bottom: 6px; }
+.related-row { display: flex; gap: 8px; align-items: baseline; padding: 4px 6px; border-radius: 6px; cursor: pointer; }
+.related-row:hover { background: rgba(0,0,0,0.04); }
+.related-name { font: 500 13.5px var(--font); }
+.related-sub { font: 12px var(--font); color: var(--text-3); }
+.today-head { font: 600 11px var(--font); color: var(--text-2); text-transform: uppercase; letter-spacing: 0.04em; padding: 12px 12px 6px; }
+.today-folder, .today-file { margin: 0 8px; }
+.today-folder > summary, .today-file > summary { cursor: pointer; padding: 5px 6px; border-radius: 6px; font: 600 13.5px var(--font); }
+.today-folder > summary:hover, .today-file > summary:hover { background: rgba(0,0,0,0.04); }
+.today-file > summary { font-weight: 500; }
+.today-task, .today-wrapped { padding: 4px 6px 4px 26px; border-radius: 6px; cursor: pointer; font: 13.5px var(--font); color: var(--text-2); }
+.today-task:hover, .today-wrapped:hover { background: rgba(0,0,0,0.04); }
+.today-wrapped { margin: 0 8px; }
 .editor-actions { margin-left: auto; display: flex; align-items: center; gap: 10px; }
 .save-state { font: 12px var(--font); color: var(--text-3); }
 .seg { display: flex; background: rgba(0,0,0,0.06); border-radius: 8px; padding: 2px; }
@@ -244,6 +263,11 @@ body.sidebar-collapsed .sidebar { width: 0; border-right-width: 0; }
 .md-body li.task input { margin-right: 6px; accent-color: var(--accent); }
 .md-body a { color: var(--accent); }
 .md-body hr { border: 0; border-top: 1px solid var(--hairline); margin: 1.2em 0; }
+.md-body table { border-collapse: collapse; margin: 0.8em 0; width: 100%; }
+.md-body th, .md-body td { border: 1px solid var(--hairline); padding: 6px 10px; text-align: left; }
+.md-body th { background: rgba(0,0,0,0.04); font-weight: 600; }
+.md-body details { border: 1px solid var(--hairline); border-radius: 8px; padding: 8px 14px; margin: 0.8em 0; }
+.md-body summary { cursor: pointer; font-weight: 600; }
 
 /* ---------- overlays ---------- */
 .overlay {

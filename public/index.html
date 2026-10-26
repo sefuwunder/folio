@@ -77,9 +77,26 @@
             </div>
           </div>
         </div>
+        <div id="editbar" class="editbar hidden" aria-label="Formatting">
+          <button data-act="bold" title="Bold"><b>B</b></button>
+          <button data-act="italic" title="Italic"><i>I</i></button>
+          <button data-act="heading" title="Heading">H</button>
+          <button data-act="quote" title="Quote">Quote</button>
+          <button data-act="bullet" title="Bulleted list">List</button>
+          <button data-act="numbered" title="Numbered list">1.</button>
+          <button data-act="task" title="Task list">Task</button>
+          <button data-act="link" title="Link">Link</button>
+          <button data-act="code" title="Inline code">Code</button>
+          <button data-act="table" title="Insert table">Table</button>
+          <button data-act="details" title="Insert foldable section">Details</button>
+        </div>
         <textarea id="editor-text" class="editor-text" spellcheck="true" placeholder="Start writing…"></textarea>
         <div id="editor-preview" class="editor-preview md-body hidden"></div>
         <div id="editor-pdf" class="editor-pdf hidden"></div>
+        <div id="related" class="related hidden">
+          <div class="related-head">Related</div>
+          <div id="related-list"></div>
+        </div>
       </div>
     </section>
   </div>

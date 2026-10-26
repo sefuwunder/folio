@@ -1,5 +1,6 @@
 // Folio client — macOS-inspired notes organizer (ES module).
 import { renderMarkdown } from '/src/markdown.js';
+import { wrapSelection, prefixLines, numberLines, insertTable, insertDetails } from '/src/editbar.js';
 
 const $ = (s) => document.querySelector(s);
 const $$ = (s) => [...document.querySelectorAll(s)];
@@ -12,6 +13,8 @@ const state = {
   note: null,        // {path, ext, content, dirty, mtime}
   mdMode: 'edit',    // 'edit' | 'preview'
   saveTimer: null,
+  today: false,      // list pane is showing the Today task view
+  todayData: null,   // last /api/today payload, re-rendered after openNote
 };
 
 async function api(path, opts = {}) {
@@ -59,11 +62,18 @@ function renderTree() {
   const host = $('#folder-tree');
   host.innerHTML = '';
   const allRow = document.createElement('div');
-  allRow.className = 'ft-row' + (state.folder === '' ? ' selected' : '');
+  allRow.className = 'ft-row' + (state.folder === '' && !state.today ? ' selected' : '');
   allRow.innerHTML = `<span class="ft-disc leaf">›</span><span class="ft-icon">${folderIcon()}</span><span class="ft-name">All Notes</span>`;
   allRow.onclick = () => selectFolder('', 'All Notes');
   allRow.oncontextmenu = (e) => { e.preventDefault(); };
   host.appendChild(allRow);
+
+  const todayRow = document.createElement('div');
+  todayRow.className = 'ft-row' + (state.today ? ' selected' : '');
+  todayRow.innerHTML = `<span class="ft-disc leaf">›</span><span class="ft-icon">${folderIcon()}</span><span class="ft-name">Today</span>`;
+  todayRow.onclick = () => openToday();
+  todayRow.oncontextmenu = (e) => { e.preventDefault(); };
+  host.appendChild(todayRow);
 
   const build = (folders, parent) => {
     for (const f of folders) {
@@ -111,6 +121,8 @@ async function loadTree() {
 async function selectFolder(path, name) {
   state.folder = path;
   state.folderName = name;
+  state.today = false;
+  state.todayData = null;
   renderBreadcrumb();
   document.body.classList.remove('sidebar-open');
   closeNote();
@@ -121,10 +133,89 @@ async function selectFolder(path, name) {
 /* ---------------- notes list ---------------- */
 
 async function loadNotes() {
+  // One choke point: in Today mode every list refresh re-renders Today
+  // instead of swapping the pane back to folder notes.
+  if (state.today) return loadToday();
   const q = `/api/notes?folder=${encodeURIComponent(state.folder)}&recursive=1&snippet=1`;
   const { notes } = await api(q);
   state.notes = notes;
   renderNotes();
+}
+
+/* ---------------- Today task view ---------------- */
+// Open tasks grouped by folder, then file — both levels collapsible
+// (native <details>). Read-only rows: clicking one opens the note.
+// The view refreshes on entry, not live on save.
+
+async function openToday() {
+  state.today = true;
+  state.folder = ''; // no folder context in Today mode; New note lands at root
+  document.body.classList.remove('sidebar-open');
+  closeNote();
+  await loadToday();
+  renderTree();
+}
+
+async function loadToday() {
+  try {
+    const data = await api('/api/today');
+    state.todayData = data;
+    renderToday(data);
+  } catch (e) { toast(e.message); }
+}
+
+function renderToday(data) {
+  const host = $('#note-list');
+  $('#list-title').textContent = 'Today';
+  host.innerHTML = '';
+  if (!data.open.length && !data.wrapped.length) {
+    host.innerHTML = '<div class="list-empty">No tasks on your plate.<br>Enjoy the clear desk.</div>';
+    return;
+  }
+  if (data.open.length) {
+    const head = document.createElement('div');
+    head.className = 'today-head';
+    head.textContent = 'Still open';
+    host.appendChild(head);
+    for (const group of data.open) {
+      const folderEl = document.createElement('details');
+      folderEl.className = 'today-folder';
+      folderEl.open = true;
+      const fSum = document.createElement('summary');
+      fSum.textContent = group.folder === '' ? 'Top level' : group.folder;
+      folderEl.appendChild(fSum);
+      for (const f of group.files) {
+        const fileEl = document.createElement('details');
+        fileEl.className = 'today-file';
+        fileEl.open = true;
+        const nSum = document.createElement('summary');
+        nSum.textContent = `${f.name} · ${f.done} of ${f.total} done`;
+        fileEl.appendChild(nSum);
+        for (const t of f.open) {
+          const row = document.createElement('div');
+          row.className = 'today-task';
+          row.textContent = t;
+          row.onclick = () => openNote(f.path);
+          fileEl.appendChild(row);
+        }
+        folderEl.appendChild(fileEl);
+      }
+      host.appendChild(folderEl);
+    }
+  }
+  if (data.wrapped.length) {
+    const head = document.createElement('div');
+    head.className = 'today-head';
+    head.textContent = 'Wrapped up';
+    host.appendChild(head);
+    for (const f of data.wrapped) {
+      const row = document.createElement('div');
+      row.className = 'today-wrapped';
+      row.textContent = `${f.name} · all ${f.total} done`;
+      row.onclick = () => openNote(f.path);
+      host.appendChild(row);
+    }
+  }
 }
 
 /** Breadcrumb for the selected folder: All Notes / A / B, segments clickable. */
@@ -210,8 +301,9 @@ async function saveNote() {
     state.note.mtime = mtime;
     setDirty(false);
     // refresh the list row's mtime/snippet without full reload
+    // (in Today mode the pane shows tasks, not notes — leave it alone)
     const row = state.notes.find((n) => n.path === state.note.path);
-    if (row) { row.mtime = mtime; row.snippet = state.note.content.replace(/\s+/g, ' ').trim().slice(0, 140); renderNotes(); }
+    if (row && !state.today) { row.mtime = mtime; row.snippet = state.note.content.replace(/\s+/g, ' ').trim().slice(0, 140); renderNotes(); }
   } catch (e) {
     toast('Save failed: ' + e.message);
   }
@@ -232,6 +324,7 @@ async function openNote(path) {
 
   if (ext === '.pdf') {
     state.note = { path, ext, content: null, dirty: false };
+    $('#editbar').classList.add('hidden');
     $('#editor-pdf').classList.remove('hidden');
     $('#editor-pdf').innerHTML = `
       <div class="pdf-bar"><span>${escHtml(name)}</span>
@@ -244,24 +337,53 @@ async function openNote(path) {
     if (ext === '.md' && state.mdMode === 'preview') showPreview();
     else showEdit();
   }
-  renderNotes();
+  if (state.today && state.todayData) renderToday(state.todayData);
+  else renderNotes();
+  fetchRelated(path);
   if (window.innerWidth <= 700) document.body.classList.add('note-open');
 }
 
 function showEdit() {
   $('#editor-text').classList.remove('hidden');
   $('#editor-preview').classList.add('hidden');
+  $('#editbar').classList.remove('hidden');
   $('#editor-text').value = state.note.content;
   $$('#md-seg button').forEach((b) => b.classList.toggle('active', b.dataset.mode === 'edit'));
 }
 
 function showPreview() {
   $('#editor-text').classList.add('hidden');
+  $('#editbar').classList.add('hidden');
   const pv = $('#editor-preview');
   pv.classList.remove('hidden');
   pv.innerHTML = renderMarkdown($('#editor-text').value || state.note.content);
   renderMermaid();
+  // preview is the reading mode — refresh related notes with saved content
+  if (state.note) fetchRelated(state.note.path);
   $$('#md-seg button').forEach((b) => b.classList.toggle('active', b.dataset.mode === 'preview'));
+}
+
+/* ---------------- related notes (abba's mind.ts, repurposed) ---------------- */
+
+async function fetchRelated(path) {
+  const box = $('#related');
+  if (!box) return;
+  try {
+    const { related } = await api(`/api/related?path=${encodeURIComponent(path)}`);
+    if (!state.note || state.note.path !== path) return; // user moved on
+    if (!related.length) { box.classList.add('hidden'); return; }
+    const list = $('#related-list');
+    list.innerHTML = '';
+    for (const r of related) {
+      const row = document.createElement('div');
+      row.className = 'related-row';
+      const dir = r.path.includes('/') ? r.path.slice(0, r.path.lastIndexOf('/')) : '';
+      row.innerHTML = `<span class="related-name">${escHtml(r.name)}</span>${dir ? `<span class="related-sub">${escHtml(dir)}</span>` : ''}`;
+      row.onclick = () => openNote(r.path);
+      list.appendChild(row);
+    }
+    box.classList.remove('hidden');
+  } catch { box.classList.add('hidden'); }
 }
 
 /* ---------------- mermaid (same pattern as abba) ---------------- */
@@ -386,6 +508,43 @@ document.addEventListener('keydown', (e) => {
   if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 's') {
     if (state.note) { e.preventDefault(); saveNote(); }
   }
+});
+
+/* ---------------- markdown edit bar ---------------- */
+// One delegated handler: pure ops live in src/editbar.js, this just applies
+// the result to the textarea and schedules a save.
+$('#editbar').addEventListener('click', (e) => {
+  const btn = e.target.closest('button[data-act]');
+  if (!btn || !state.note || state.note.ext === '.pdf') return;
+  const ta = $('#editor-text');
+  const { value, selectionStart: s, selectionEnd: en } = ta;
+  let r;
+  switch (btn.dataset.act) {
+    case 'bold': r = wrapSelection(value, s, en, '**', '**', 'bold text'); break;
+    case 'italic': r = wrapSelection(value, s, en, '*', '*', 'italic text'); break;
+    case 'heading': r = prefixLines(value, s, en, '## ', /^#{1,6}\s+/); break;
+    case 'quote': r = prefixLines(value, s, en, '> ', /^>\s?/); break;
+    case 'bullet': r = prefixLines(value, s, en, '- ', /^[-*+]\s+/); break;
+    case 'numbered': r = numberLines(value, s, en); break;
+    case 'task': r = prefixLines(value, s, en, '- [ ] ', /^-\s\[[ xX]\]\s+/); break;
+    case 'code': r = wrapSelection(value, s, en, '`', '`', 'code'); break;
+    case 'table': r = insertTable(value, s, en); break;
+    case 'details': r = insertDetails(value, s, en); break;
+    case 'link': {
+      if (s === en) r = wrapSelection(value, s, en, '[', '](https://)', 'text');
+      else {
+        const wrapped = '[' + value.slice(s, en) + '](https://)';
+        const urlAt = s + 1 + (en - s) + 2;
+        r = { value: value.slice(0, s) + wrapped + value.slice(en), start: urlAt, end: urlAt + 8 };
+      }
+      break;
+    }
+    default: return;
+  }
+  ta.value = r.value;
+  ta.setSelectionRange(r.start, r.end);
+  ta.focus();
+  scheduleSave();
 });
 
 /* ---------------- create / rename / delete / move ---------------- */

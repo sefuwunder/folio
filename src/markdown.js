@@ -1,10 +1,13 @@
 // src/markdown.js — minimal zero-dependency markdown renderer (shared ESM).
 // Supports: headings, bold, italic, inline code, code blocks, links,
-// unordered/ordered lists, task checkboxes, blockquotes, hr, paragraphs.
+// unordered/ordered lists, task checkboxes, blockquotes, hr, paragraphs,
+// GFM-style pipe tables, and <details> foldable sections.
 // A ```mermaid fenced block renders as <pre class="mermaid"> (the client
 // lazy-loads the locally vendored Mermaid bundle to turn it into a diagram);
 // every other fence renders as a plain code block.
-// HTML-escapes input first; output is safe to inject.
+// HTML-escapes input first; output is safe to inject. The only raw HTML
+// ever emitted is a bare <details>/<details open>/<summary> foldable
+// block — any other tag (or attributes on details) stays escaped text.
 
 function esc(s) {
   return String(s)
@@ -40,10 +43,20 @@ export function renderMarkdown(src) {
   let inCode = false;
   let codeLang = '';
   let codeBuf = [];
+  let inDetails = false;
   let listStack = []; // 'ul' | 'ol'
 
   const closeLists = () => {
     while (listStack.length) html.push(`</${listStack.pop()}>`);
+  };
+
+  // A pipe table starts with a | header row + a | --- | separator row
+  // (each separator cell needs 3+ dashes, optional alignment colons).
+  const isTableStart = (idx) => {
+    if (!/^\|.*\|\s*$/.test(lines[idx] || '')) return false;
+    const sep = lines[idx + 1] || '';
+    if (!/^\|[\s:|-]+\|\s*$/.test(sep)) return false;
+    return sep.replace(/^\||\|$/g, '').split('|').every((c) => /^:?-{3,}:?$/.test(c.trim()));
   };
 
   while (i < lines.length) {
@@ -69,6 +82,31 @@ export function renderMarkdown(src) {
       continue;
     }
     if (inCode) { codeBuf.push(line); i++; continue; }
+
+    // foldable section: bare <details> or <details open> only — any other
+    // tag or attribute stays escaped text (see the paragraph branch)
+    if (/^<details(\s+open)?>\s*$/.test(line)) {
+      closeLists();
+      html.push(/^<details\s+open/.test(line) ? '<details open>' : '<details>');
+      inDetails = true;
+      i++;
+      continue;
+    }
+    if (inDetails && /^<\/details>\s*$/.test(line)) {
+      closeLists();
+      html.push('</details>');
+      inDetails = false;
+      i++;
+      continue;
+    }
+    if (inDetails) {
+      const sm = line.match(/^<summary>(.*)<\/summary>\s*$/);
+      if (sm) {
+        html.push(`<summary>${inline(sm[1])}</summary>`);
+        i++;
+        continue;
+      }
+    }
 
     // blank line
     if (/^\s*$/.test(line)) { closeLists(); i++; continue; }
@@ -124,18 +162,46 @@ export function renderMarkdown(src) {
       continue;
     }
 
+    // GFM-style pipe table: header row + separator row, then body rows
+    if (isTableStart(i)) {
+      closeLists();
+      const cells = (l) => l.trim().replace(/^\||\|$/g, '').split('|').map((c) => c.trim());
+      const header = cells(line);
+      const aligns = cells(lines[i + 1]).map((s) => /^:-+:$/.test(s) ? 'center' : /^-+:$/.test(s) ? 'right' : /^:-+$/.test(s) ? 'left' : '');
+      const alignAttr = (a) => a ? ` style="text-align:${a}"` : '';
+      html.push('<table><thead><tr>' + header.map((c, k) => `<th${alignAttr(aligns[k] || '')}>${inline(c)}</th>`).join('') + '</tr></thead><tbody>');
+      i += 2;
+      while (i < lines.length && /^\|.*\|\s*$/.test(lines[i])) {
+        const row = cells(lines[i]);
+        html.push('<tr>' + header.map((_, k) => `<td${alignAttr(aligns[k] || '')}>${inline(row[k] || '')}</td>`).join('') + '</tr>');
+        i++;
+      }
+      html.push('</tbody></table>');
+      continue;
+    }
+
     // paragraph (gather soft-wrapped lines)
     closeLists();
     const para = [];
     while (i < lines.length && !/^\s*$/.test(lines[i]) &&
-           !/^(#{1,6}\s|```|>\s?|(\s*([-*+]|\d+[.)])\s+)|(\*\*\*|---|___)\s*$)/.test(lines[i])) {
+           !/^(#{1,6}\s|```|>\s?|(\s*([-*+]|\d+[.)])\s+|<details(\s+open)?>\s*|<\/details>\s*|<summary>.*<\/summary>\s*)|(\*\*\*|---|___)\s*$)/.test(lines[i]) &&
+           !isTableStart(i)) {
       para.push(lines[i]);
       i++;
+    }
+    if (!para.length) {
+      // A line that stops a paragraph but belongs to no block (a stray
+      // </details> or <summary> outside a foldable section): render it as
+      // escaped text and move on — never spin on the same line.
+      html.push(`<p>${inline(lines[i])}</p>`);
+      i++;
+      continue;
     }
     html.push(`<p>${para.map(inline).join('<br>')}</p>`);
   }
 
   closeLists();
+  if (inDetails) html.push('</details>'); // unclosed foldable section: close it, don't swallow the doc
   return html.join('\n');
 }
 
@@ -150,6 +216,11 @@ export function plainText(src) {
     .replace(/(\*\*|__|\*|_)/g, '')
     .replace(/^>\s?/gm, '')
     .replace(/^(\s*[-*+]|\s*\d+[.)])\s+\[[ xX]\]\s+/gm, '')
+    .replace(/<details[^>]*>/g, '')
+    .replace(/<\/details>/g, '')
+    .replace(/<summary>(.*?)<\/summary>/g, '$1')
+    .replace(/^\|[\s:|-]+\|\s*$/gm, '')
+    .replace(/\|/g, ' ')
     .replace(/\s+/g, ' ')
     .trim();
 }

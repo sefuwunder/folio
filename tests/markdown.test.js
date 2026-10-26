@@ -70,6 +70,49 @@ describe('renderMarkdown', () => {
   test('mermaid source is stripped from plain-text snippets', () => {
     expect(plainText('```mermaid\nflowchart TD\n  A-->B\n```')).toBe('');
   });
+
+  test('pipe tables render with alignment', () => {
+    const h = renderMarkdown('| Name | Age |\n| --- | ---: |\n| Ada | 36 |\n| Bob | 41 |');
+    expect(h).toContain('<table>');
+    expect(h).toContain('<th>Name</th>');
+    expect(h).toContain('<th style="text-align:right">Age</th>');
+    expect(h).toContain('<td>Ada</td>');
+    expect(h).toContain('<td style="text-align:right">36</td>');
+  });
+
+  test('a pipe row without a valid separator is not a table', () => {
+    const h = renderMarkdown('| A |\n| -- |\n| 1 |');
+    expect(h).not.toContain('<table>');
+  });
+
+  test('details blocks fold, render markdown inside, and close', () => {
+    const h = renderMarkdown('<details>\n<summary>Click me</summary>\n\nSome **bold** text\n\n</details>\n\nAfter');
+    expect(h).toContain('<details>');
+    expect(h).toContain('<summary>Click me</summary>');
+    expect(h).toContain('<p>Some <strong>bold</strong> text</p>');
+    expect(h).toContain('</details>');
+    expect(h).toContain('<p>After</p>');
+  });
+
+  test('details open variant works, attributes stay escaped', () => {
+    expect(renderMarkdown('<details open>\n<summary>S</summary>\nBody\n</details>')).toContain('<details open>');
+    const evil = renderMarkdown('<details onclick="alert(1)">\n<summary>x</summary>\n</details>');
+    expect(evil).not.toContain('onclick="alert');
+    expect(evil).toContain('&lt;details');
+  });
+
+  test('stray closing tags render as escaped text, never hang', () => {
+    const h = renderMarkdown('hello\n</details>\nworld');
+    expect(h).toContain('<p>hello</p>');
+    expect(h).toContain('&lt;/details&gt;');
+    expect(h).toContain('<p>world</p>');
+  });
+
+  test('unclosed details auto-closes at end of document', () => {
+    const h = renderMarkdown('<details>\n<summary>S</summary>\nBody');
+    expect(h).toContain('<details>');
+    expect(h).toContain('</details>');
+  });
 });
 
 describe('plainText', () => {
