@@ -36,6 +36,10 @@
         <span class="search-hint">Search</span>
         <kbd>⌘K</kbd>
       </button>
+      <button id="btn-tags" class="tbtn" title="Tag explorer">
+        <svg viewBox="0 0 16 16" width="16" height="16"><circle cx="4" cy="12" r="2" fill="none" stroke="currentColor"/><circle cx="12" cy="10" r="2" fill="none" stroke="currentColor"/><circle cx="8" cy="4" r="2" fill="none" stroke="currentColor"/><path d="M5.6 10.4 7 6M9.6 5.6 10.6 8.4" stroke="currentColor" fill="none"/></svg>
+        <span class="tlabel">Tags</span>
+      </button>
     </div>
     <div class="apptitle">Folio</div>
   </header>
@@ -98,6 +102,23 @@
           <div id="related-list"></div>
         </details>
       </div>
+    </section>
+    <section id="tag-explorer" class="tag-explorer" aria-label="Tag explorer">
+      <div class="tag-toolbar">
+        <button id="btn-tags-back" class="tbtn" title="Back to notes">
+          <svg viewBox="0 0 16 16" width="16" height="16"><path d="M9 3 4 8l5 5" fill="none" stroke="currentColor"/></svg>
+          <span class="tlabel">Notes</span>
+        </button>
+        <span id="tag-counts" class="tag-counts"></span>
+        <span class="tag-spacer"></span>
+        <button id="btn-tags-zoom-out" class="tbtn" title="Zoom out">−</button>
+        <button id="btn-tags-zoom-in" class="tbtn" title="Zoom in">+</button>
+        <button id="btn-tags-reset" class="tbtn" title="Fit all tags in view">
+          <span class="tlabel">Reset view</span>
+        </button>
+      </div>
+      <canvas id="tag-canvas"></canvas>
+      <div id="tag-empty" class="tag-empty hidden">No #tags in the vault yet — write #like-this in any note and it will appear here.</div>
     </section>
   </div>
 

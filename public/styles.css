@@ -215,6 +215,17 @@ body.sidebar-collapsed .sidebar { width: 0; border-right-width: 0; }
 .related-row:hover { background: rgba(0,0,0,0.04); }
 .related-name { font: 500 13.5px var(--font); }
 .related-sub { font: 12px var(--font); color: var(--text-3); }
+
+/* ---------- tag explorer: node graph on a zoomable canvas ---------- */
+.tag-explorer { display: none; flex: 1; min-height: 0; flex-direction: column; background: var(--editor-bg); }
+body.tags-open .tag-explorer { display: flex; }
+body.tags-open .sidebar, body.tags-open .notelist, body.tags-open .editor { display: none; }
+.tag-toolbar { display: flex; align-items: center; gap: 8px; padding: 10px 14px; border-bottom: 1px solid var(--hairline); }
+.tag-counts { font: 500 13px var(--font); color: var(--text-2); white-space: nowrap; }
+.tag-spacer { flex: 1; }
+#tag-canvas { flex: 1; min-height: 0; width: 100%; display: block; cursor: grab; touch-action: none; }
+#tag-canvas:active { cursor: grabbing; }
+.tag-empty { padding: 48px 20px; text-align: center; color: var(--text-2); font: 14px var(--font); }
 .today-head { font: 600 11px var(--font); color: var(--text-2); text-transform: uppercase; letter-spacing: 0.04em; padding: 12px 12px 6px; }
 .today-folder, .today-file { margin: 0 8px; }
 .today-folder > summary, .today-file > summary { cursor: pointer; padding: 5px 6px; border-radius: 6px; font: 600 13.5px var(--font); }

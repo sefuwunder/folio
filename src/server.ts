@@ -18,7 +18,7 @@ import {
 import { getAppSetting, setAppSetting } from './settings.js';
 import { searchVault } from './search.js';
 import { plainText } from './markdown.js';
-import { relatedNotes, groupToday } from './mind.js';
+import { relatedNotes, groupToday, buildTagGraph, layoutTagGraph } from './mind.js';
 import {
   SYNC_EXTS, OpenDrive, odSync,
   loadSyncSettings, saveSyncSettings, maskedSettings,
@@ -66,6 +66,14 @@ const errJson = (e: any) => {
 const jsonBody = async (req: Request) => {
   try { return await req.json(); } catch { return {}; }
 };
+
+// Every text note in the vault, for the quiet-intelligence endpoints.
+function loadPool(vaultDir: string) {
+  return walkVault(vaultDir).map((n: any) => {
+    try { return { path: n.path, name: n.path.slice(n.path.lastIndexOf('/') + 1), body: readNote(vaultDir, n.path), mtime: n.mtime }; }
+    catch { return null; }
+  }).filter(Boolean);
+}
 
 async function serveStatic(pathname: string): Promise<Response | null> {
   let rel = pathname === '/' ? 'index.html' : pathname.slice(1);
@@ -176,23 +184,21 @@ const server = Bun.serve({
         return Response.json({ snippet: text.replace(/\s+/g, ' ').trim().slice(0, 140) });
       }
       // ----- quiet intelligence (abba's mind.ts, repurposed) -----
-      // Both endpoints read every text note in the vault — fine at personal
+      // All three endpoints read every text note in the vault — fine at personal
       // scale, and the scoring itself is deterministic (see src/mind.js).
       if (pathname === '/api/related' && req.method === 'GET') {
         const path = url.searchParams.get('path') || '';
-        const pool = walkVault(vault).map((n: any) => {
-          try { return { path: n.path, name: n.path.slice(n.path.lastIndexOf('/') + 1), body: readNote(vault, n.path), mtime: n.mtime }; }
-          catch { return null; }
-        }).filter(Boolean);
+        const pool = loadPool(vault);
         const target = pool.find((n: any) => n.path === path);
         return Response.json({ related: target ? relatedNotes(target, pool) : [] });
       }
       if (pathname === '/api/today' && req.method === 'GET') {
-        const pool = walkVault(vault).map((n: any) => {
-          try { return { path: n.path, name: n.path.slice(n.path.lastIndexOf('/') + 1), body: readNote(vault, n.path), mtime: n.mtime }; }
-          catch { return null; }
-        }).filter(Boolean);
+        const pool = loadPool(vault);
         return Response.json(groupToday(pool));
+      }
+      if (pathname === '/api/tags' && req.method === 'GET') {
+        const pool = loadPool(vault);
+        return Response.json(layoutTagGraph(buildTagGraph(pool)));
       }
 
       // ----- vault location -----

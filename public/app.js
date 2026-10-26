@@ -425,6 +425,225 @@ async function fetchRelated(path) {
   } catch { box.classList.add('hidden'); }
 }
 
+/* ---------------- tag explorer: node graph on a zoomable canvas ----------------
+   Hashtags stay implicit everywhere else — no chips in notes, nothing
+   written back. This is their one surface: tags and notes as nodes, edges
+   for "note carries tag", laid out deterministically by /api/tags.
+   Drag to pan, scroll to zoom, click a tag to isolate its notes, click a
+   note to open it. */
+
+const tagsState = {
+  data: null,   // { tags: [{name,x,y,count}], notes: [{path,name,x,y,tags}] }
+  scale: 1, ox: 0, oy: 0,
+  sel: null,    // selected tag name, or null
+  drag: null,   // { x, y, moved } while a pointer drag is in progress
+};
+
+function tagRadius(t) { return 24 + Math.min(16, t.count * 2); }
+const NOTE_RADIUS = 15;
+
+function sizeTagsCanvas() {
+  const c = $('#tag-canvas');
+  const dpr = window.devicePixelRatio || 1;
+  const w = c.clientWidth, h = c.clientHeight;
+  if (!w || !h) return;
+  c.width = Math.round(w * dpr);
+  c.height = Math.round(h * dpr);
+  const ctx = c.getContext('2d');
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+}
+
+function fitTagsView() {
+  const c = $('#tag-canvas');
+  const { tags, notes } = tagsState.data;
+  const pts = [...tags.map((t) => [t.x, t.y]), ...notes.map((n) => [n.x, n.y])];
+  if (!pts.length) return;
+  let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+  for (const [x, y] of pts) {
+    minX = Math.min(minX, x); maxX = Math.max(maxX, x);
+    minY = Math.min(minY, y); maxY = Math.max(maxY, y);
+  }
+  const pad = 80;
+  const bw = maxX - minX + pad * 2, bh = maxY - minY + pad * 2;
+  const cw = c.clientWidth, ch = c.clientHeight;
+  if (!cw || !ch) return;
+  tagsState.scale = Math.max(0.05, Math.min(cw / bw, ch / bh, 1.25));
+  tagsState.ox = (cw - (minX + maxX) * tagsState.scale) / 2;
+  tagsState.oy = (ch - (minY + maxY) * tagsState.scale) / 2;
+}
+
+function drawTags() {
+  const c = $('#tag-canvas');
+  const ctx = c.getContext('2d');
+  const cw = c.clientWidth, ch = c.clientHeight;
+  ctx.clearRect(0, 0, cw, ch);
+  const { tags, notes } = tagsState.data;
+  const { scale, ox, oy, sel } = tagsState;
+  const X = (x) => x * scale + ox, Y = (y) => y * scale + oy;
+  const tagByName = new Map(tags.map((t) => [t.name, t]));
+  const connected = (n) => !sel || n.tags.includes(sel);
+  ctx.lineWidth = 1;
+  for (const n of notes) {
+    for (const t of n.tags) {
+      const tag = tagByName.get(t);
+      if (!tag) continue;
+      ctx.globalAlpha = sel && !connected(n) ? 0.12 : 0.55;
+      ctx.strokeStyle = sel && connected(n) ? '#007aff' : '#1d1d1f';
+      ctx.beginPath();
+      ctx.moveTo(X(n.x), Y(n.y));
+      ctx.lineTo(X(tag.x), Y(tag.y));
+      ctx.stroke();
+    }
+  }
+  ctx.globalAlpha = 1;
+  ctx.textAlign = 'center';
+  for (const n of notes) {
+    ctx.globalAlpha = sel && !connected(n) ? 0.25 : 1;
+    ctx.beginPath();
+    ctx.arc(X(n.x), Y(n.y), NOTE_RADIUS * scale, 0, Math.PI * 2);
+    ctx.fillStyle = '#ffffff';
+    ctx.fill();
+    ctx.strokeStyle = '#1d1d1f';
+    ctx.lineWidth = 1.5;
+    ctx.stroke();
+    ctx.fillStyle = '#6e6e73';
+    ctx.font = '11px -apple-system, BlinkMacSystemFont, "SF Pro Text", "Helvetica Neue", sans-serif';
+    ctx.fillText(n.name.replace(/\.[^.]+$/, ''), X(n.x), Y(n.y) + (NOTE_RADIUS + 13) * scale);
+  }
+  for (const t of tags) {
+    const r = tagRadius(t) * scale;
+    const on = !sel || sel === t.name;
+    ctx.globalAlpha = on ? 1 : 0.25;
+    ctx.beginPath();
+    ctx.arc(X(t.x), Y(t.y), r, 0, Math.PI * 2);
+    ctx.fillStyle = '#007aff';
+    ctx.fill();
+    if (sel === t.name) {
+      ctx.lineWidth = 3;
+      ctx.strokeStyle = '#007aff';
+      ctx.beginPath();
+      ctx.arc(X(t.x), Y(t.y), r + 5, 0, Math.PI * 2);
+      ctx.stroke();
+    }
+    ctx.fillStyle = '#1d1d1f';
+    ctx.font = '600 12px -apple-system, BlinkMacSystemFont, "SF Pro Text", "Helvetica Neue", sans-serif';
+    ctx.fillText('#' + t.name, X(t.x), Y(t.y) + r + 15 * scale);
+  }
+  ctx.globalAlpha = 1;
+}
+
+function tagsHit(wx, wy) {
+  const { tags, notes, scale } = tagsState;
+  for (const t of tags) {
+    const d = Math.hypot(wx - t.x, wy - t.y);
+    if (d <= tagRadius(t) + 8 / scale) return { kind: 'tag', node: t };
+  }
+  for (const n of notes) {
+    const d = Math.hypot(wx - n.x, wy - n.y);
+    if (d <= NOTE_RADIUS + 8 / scale) return { kind: 'note', node: n };
+  }
+  return null;
+}
+
+function zoomTagsAt(cx, cy, factor) {
+  const s = tagsState;
+  const next = Math.max(0.15, Math.min(4, s.scale * factor));
+  const wx = (cx - s.ox) / s.scale, wy = (cy - s.oy) / s.scale;
+  s.scale = next;
+  s.ox = cx - wx * next;
+  s.oy = cy - wy * next;
+  drawTags();
+}
+
+async function openTagExplorer() {
+  if (document.body.classList.contains('tags-open')) { closeTagExplorer(); return; }
+  try {
+    const data = await api('/api/tags');
+    tagsState.data = data;
+    tagsState.sel = null;
+    document.body.classList.add('tags-open');
+    $('#tag-counts').textContent = `${data.tags.length} tags · ${data.notes.length} notes`;
+    $('#tag-empty').classList.toggle('hidden', data.tags.length > 0);
+    $('#tag-canvas').classList.toggle('hidden', data.tags.length === 0);
+    requestAnimationFrame(() => {
+      sizeTagsCanvas();
+      fitTagsView();
+      drawTags();
+    });
+  } catch (e) {
+    toast('Tag explorer failed: ' + e.message);
+  }
+}
+
+function closeTagExplorer() {
+  document.body.classList.remove('tags-open');
+  tagsState.data = null;
+  tagsState.sel = null;
+}
+
+$('#btn-tags').onclick = openTagExplorer;
+$('#btn-tags-back').onclick = closeTagExplorer;
+$('#btn-tags-reset').onclick = () => { fitTagsView(); drawTags(); };
+$('#btn-tags-zoom-in').onclick = () => {
+  const c = $('#tag-canvas');
+  zoomTagsAt(c.clientWidth / 2, c.clientHeight / 2, 1.25);
+};
+$('#btn-tags-zoom-out').onclick = () => {
+  const c = $('#tag-canvas');
+  zoomTagsAt(c.clientWidth / 2, c.clientHeight / 2, 1 / 1.25);
+};
+window.addEventListener('resize', () => {
+  if (tagsState.data) { sizeTagsCanvas(); drawTags(); }
+});
+{
+  const c = $('#tag-canvas');
+  c.addEventListener('pointerdown', (e) => {
+    tagsState.drag = { x: e.clientX, y: e.clientY, moved: false };
+    c.setPointerCapture(e.pointerId);
+  });
+  c.addEventListener('pointermove', (e) => {
+    const d = tagsState.drag;
+    if (!d) return;
+    const dx = e.clientX - d.x, dy = e.clientY - d.y;
+    if (Math.abs(dx) + Math.abs(dy) > 4) d.moved = true;
+    if (d.moved) {
+      tagsState.ox += dx;
+      tagsState.oy += dy;
+      drawTags();
+    }
+    d.x = e.clientX;
+    d.y = e.clientY;
+  });
+  const endDrag = (e) => {
+    const d = tagsState.drag;
+    if (!d) return;
+    tagsState.drag = null;
+    if (d.moved || !tagsState.data) return;
+    const rect = c.getBoundingClientRect();
+    const wx = (e.clientX - rect.left - tagsState.ox) / tagsState.scale;
+    const wy = (e.clientY - rect.top - tagsState.oy) / tagsState.scale;
+    const hit = tagsHit(wx, wy);
+    if (!hit) {
+      if (tagsState.sel) { tagsState.sel = null; drawTags(); }
+      return;
+    }
+    if (hit.kind === 'tag') {
+      tagsState.sel = tagsState.sel === hit.node.name ? null : hit.node.name;
+      drawTags();
+    } else {
+      closeTagExplorer();
+      openNote(hit.node.path);
+    }
+  };
+  c.addEventListener('pointerup', endDrag);
+  c.addEventListener('pointercancel', () => { tagsState.drag = null; });
+  c.addEventListener('wheel', (e) => {
+    e.preventDefault();
+    const rect = c.getBoundingClientRect();
+    zoomTagsAt(e.clientX - rect.left, e.clientY - rect.top, e.deltaY < 0 ? 1.12 : 1 / 1.12);
+  }, { passive: false });
+}
+
 /* ---------------- mermaid (same pattern as abba) ---------------- */
 /* ```mermaid blocks arrive as <pre class="mermaid"> from renderMarkdown.
    The vendored bundle (public/vendor/mermaid.min.js, 11.4.1, served locally
@@ -553,6 +772,10 @@ $('#editor-text').addEventListener('input', scheduleSave);
 document.addEventListener('keydown', (e) => {
   if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 's') {
     if (state.note) { e.preventDefault(); saveNote(); }
+  }
+  if (e.key === 'Escape' && document.body.classList.contains('tags-open')) {
+    const t = document.activeElement;
+    if (!t || !/INPUT|TEXTAREA/.test(t.tagName)) closeTagExplorer();
   }
 });
 

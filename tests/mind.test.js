@@ -1,5 +1,5 @@
 import { describe, test, expect } from 'bun:test';
-import { relatedNotes, parseTasks, groupToday } from '../src/mind.js';
+import { relatedNotes, parseTasks, groupToday, extractTags, buildTagGraph, layoutTagGraph } from '../src/mind.js';
 
 describe('relatedNotes', () => {
   const pool = [
@@ -71,5 +71,80 @@ describe('groupToday', () => {
     expect(open[0].files.map((f) => f.path)).toEqual(['e.md']);
     expect(open[1].files).toEqual([{ path: 'Work/a.md', name: 'a.md', open: ['one', 'three'], done: 1, total: 3 }]);
     expect(wrapped).toEqual([{ path: 'Work/b.md', name: 'b.md', total: 1 }]);
+  });
+});
+
+describe('extractTags', () => {
+  test('finds hashtags, lowercases, dedupes, sorts', () => {
+    expect(extractTags('Meeting #Farm notes #tag and #farm again')).toEqual(['farm', 'tag']);
+  });
+
+  test('headings are not tags, but a hashtag inside a heading line is', () => {
+    expect(extractTags('# Title\n## Section\n# Hello #farm')).toEqual(['farm']);
+  });
+
+  test('URL fragments, glued words, and ##tag are not tags', () => {
+    expect(extractTags('see https://x.test/p#frag and word#tag and ##tag')).toEqual([]);
+  });
+
+  test('fenced code blocks and inline code spans are skipped', () => {
+    expect(extractTags('```\n#code\n```\n`#inline` and #real')).toEqual(['real']);
+  });
+
+  test('bracketed and mid-line hashtags count', () => {
+    expect(extractTags('see (#farm) and a word #tag-name_x here')).toEqual(['farm', 'tag-name_x']);
+  });
+});
+
+describe('buildTagGraph', () => {
+  const pool = [
+    { path: 'b.md', name: 'b.md', body: 'soil #farm #soil', mtime: 2 },
+    { path: 'a.md', name: 'a.md', body: 'seeds #farm', mtime: 1 },
+    { path: 'c.md', name: 'c.md', body: 'no tags here', mtime: 3 },
+  ];
+
+  test('tags sorted, note lists sorted, untagged notes omitted', () => {
+    const g = buildTagGraph(pool);
+    expect(g.tags).toEqual([
+      { name: 'farm', notes: ['a.md', 'b.md'] },
+      { name: 'soil', notes: ['b.md'] },
+    ]);
+    expect(g.notes).toEqual([
+      { path: 'a.md', name: 'a.md', tags: ['farm'] },
+      { path: 'b.md', name: 'b.md', tags: ['farm', 'soil'] },
+    ]);
+  });
+});
+
+describe('layoutTagGraph', () => {
+  const graph = buildTagGraph([
+    { path: 'a.md', name: 'a.md', body: '#farm only', mtime: 1 },
+    { path: 'b.md', name: 'b.md', body: '#farm #soil both', mtime: 2 },
+    { path: 'c.md', name: 'c.md', body: '#soil only', mtime: 3 },
+  ]);
+
+  test('deterministic: same graph lays out identically', () => {
+    expect(layoutTagGraph(graph)).toEqual(layoutTagGraph(graph));
+  });
+
+  test('single-tag notes ring clear of their tag node', () => {
+    const laid = layoutTagGraph(graph);
+    const farm = laid.tags.find((t) => t.name === 'farm');
+    const a = laid.notes.find((n) => n.path === 'a.md');
+    const d = Math.hypot(a.x - farm.x, a.y - farm.y);
+    expect(d).toBeGreaterThan(60);
+  });
+
+  test('multi-tag note sits at its tags centroid', () => {
+    const laid = layoutTagGraph(graph);
+    const farm = laid.tags.find((t) => t.name === 'farm');
+    const soil = laid.tags.find((t) => t.name === 'soil');
+    const b = laid.notes.find((n) => n.path === 'b.md');
+    expect(b.x).toBeCloseTo((farm.x + soil.x) / 2, 6);
+    expect(b.y).toBeCloseTo((farm.y + soil.y) / 2, 6);
+  });
+
+  test('empty graph lays out empty', () => {
+    expect(layoutTagGraph({ tags: [], notes: [] })).toEqual({ tags: [], notes: [] });
   });
 });
